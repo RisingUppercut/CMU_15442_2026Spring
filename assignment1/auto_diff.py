@@ -211,7 +211,7 @@ class MulOp(Op):
     def gradient(self, node: Node, output_grad: Node) -> List[Node]:
         """Given gradient of multiplication node, return partial adjoint to each input."""
         """TODO: Your code here"""
-
+        return [mul(node.inputs[1], output_grad), mul(node.inputs[0], output_grad)]
 
 class MulByConstOp(Op):
     """Op to element-wise multiply a node by a constant."""
@@ -233,7 +233,7 @@ class MulByConstOp(Op):
     def gradient(self, node: Node, output_grad: Node) -> List[Node]:
         """Given gradient of multiplication node, return partial adjoint to the input."""
         """TODO: Your code here"""
-
+        return [mul_by_const(output_grad, node.constant)]
 
 class DivOp(Op):
     """Op to element-wise divide two nodes."""
@@ -254,7 +254,8 @@ class DivOp(Op):
     def gradient(self, node: Node, output_grad: Node) -> List[Node]:
         """Given gradient of division node, return partial adjoint to each input."""
         """TODO: Your code here"""
-
+        return [div(output_grad, node.inputs[1]), 
+                mul(div(node.inputs[0], mul_by_const(mul(node.inputs[1], node.inputs[1]), -1.0)), output_grad)]
 
 class DivByConstOp(Op):
     """Op to element-wise divide a nodes by a constant."""
@@ -276,7 +277,7 @@ class DivByConstOp(Op):
     def gradient(self, node: Node, output_grad: Node) -> List[Node]:
         """Given gradient of division node, return partial adjoint to the input."""
         """TODO: Your code here"""
-
+        return [div_by_const(output_grad, node.constant)]
 
 class MatMulOp(Op):
     """Matrix multiplication op of two nodes."""
@@ -337,7 +338,18 @@ class MatMulOp(Op):
         - You may want to look up some materials for the gradients of matmul.
         """
         """TODO: Your code here"""
+        A_T = node.trans_A
+        B_T = node.trans_B
+        if A_T:
+            grad_1 = matmul(node.inputs[1], output_grad, trans_A=B_T, trans_B=True)
+        else:
+            grad_1 = matmul(output_grad, node.inputs[1], trans_B=not B_T)
 
+        if B_T:
+            grad_2 = matmul(output_grad, node.inputs[0], trans_A=True, trans_B=A_T)
+        else:
+            grad_2 = matmul(node.inputs[0], output_grad, trans_A=not A_T)
+        return [grad_1, grad_2]
 
 class ZerosLikeOp(Op):
     """Zeros-like op that returns an all-zero array with the same shape as the input."""
@@ -382,6 +394,21 @@ matmul = MatMulOp()
 zeros_like = ZerosLikeOp()
 ones_like = OnesLikeOp()
 
+def topo_sort(eval_nodes: List[Node]) -> List[Node]:
+    """Given eval_nodes, return the topological order of the computation graph containing these nodes."""
+    visited = set()
+    topo_order = []
+    
+    def dfs(node : Node) -> None:
+        visited.add(Node)
+        for next in node.inputs:
+            if next not in visited:
+                dfs(next)
+        topo_order.append(node)
+    
+    for node in eval_nodes:
+        dfs(node)
+    return topo_order
 
 class Evaluator:
     """The node evaluator that computes the values of nodes in a computational graph."""
@@ -416,6 +443,16 @@ class Evaluator:
             The list of values for nodes in `eval_nodes` field.
         """
         """TODO: Your code here"""
+        node_to_val = input_values.copy()
+        sorted = topo_sort(self.eval_nodes)
+        for node in sorted:
+            if node in node_to_val:
+                continue
+            inputs = [node_to_val[input_node] for input_node in node.inputs]
+            node_to_val[node] = node.op.compute(node, inputs)
+        
+        eval_values = [node_to_val[node] for node in self.eval_nodes]
+        return eval_values
 
 
 def gradients(output_node: Node, nodes: List[Node]) -> List[Node]:
