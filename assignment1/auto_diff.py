@@ -191,7 +191,25 @@ class AddByConstOp(Op):
         """Given gradient of add node, return partial adjoint to the input."""
         return [output_grad]
 
+class SubOp(Op):
+    """Op to element-wise sub two nodes."""
 
+    def __call__(self, node_A: Node, node_B: Node) -> Node:
+        return Node(
+            inputs=[node_A, node_B],
+            op=self,
+            name=f"({node_A.name}+{node_B.name})",
+        )
+
+    def compute(self, node: Node, input_values: List[np.ndarray]) -> np.ndarray:
+        """Return the element-wise sub of input values."""
+        assert len(input_values) == 2
+        return input_values[0] - input_values[1]
+
+    def gradient(self, node: Node, output_grad: Node) -> List[Node]:
+        """Given gradient of add node, return partial adjoint to each input."""
+        return [output_grad, mul_by_const(output_grad, -1.0)]
+    
 class MulOp(Op):
     """Op to element-wise multiply two nodes."""
 
@@ -205,11 +223,19 @@ class MulOp(Op):
     def compute(self, node: Node, input_values: List[np.ndarray]) -> np.ndarray:
         """Return the element-wise multiplication of input values."""
         """TODO: Your code here"""
-
+        assert len(input_values) == 2
+        try:
+            r = input_values[0] * input_values[1] # TODO
+        except ValueError as e:
+            print("Caught ValueError:", e)
+            print(node.name)
+            raise
+        return r
+    
     def gradient(self, node: Node, output_grad: Node) -> List[Node]:
         """Given gradient of multiplication node, return partial adjoint to each input."""
         """TODO: Your code here"""
-
+        return [mul(node.inputs[1], output_grad), mul(node.inputs[0], output_grad)]
 
 class MulByConstOp(Op):
     """Op to element-wise multiply a node by a constant."""
@@ -225,11 +251,13 @@ class MulByConstOp(Op):
     def compute(self, node: Node, input_values: List[np.ndarray]) -> np.ndarray:
         """Return the element-wise multiplication of the input value and the constant."""
         """TODO: Your code here"""
-
+        assert len(input_values) == 1
+        return input_values[0] * node.constant
+    
     def gradient(self, node: Node, output_grad: Node) -> List[Node]:
         """Given gradient of multiplication node, return partial adjoint to the input."""
         """TODO: Your code here"""
-
+        return [mul_by_const(output_grad, node.constant)]
 
 class DivOp(Op):
     """Op to element-wise divide two nodes."""
@@ -244,11 +272,14 @@ class DivOp(Op):
     def compute(self, node: Node, input_values: List[np.ndarray]) -> np.ndarray:
         """Return the element-wise division of input values."""
         """TODO: Your code here"""
-
+        assert len(input_values) == 2
+        return input_values[0] / input_values[1]
+    
     def gradient(self, node: Node, output_grad: Node) -> List[Node]:
         """Given gradient of division node, return partial adjoint to each input."""
         """TODO: Your code here"""
-
+        return [div(output_grad, node.inputs[1]), 
+                mul(div(node.inputs[0], mul_by_const(mul(node.inputs[1], node.inputs[1]), -1.0)), output_grad)]
 
 class DivByConstOp(Op):
     """Op to element-wise divide a nodes by a constant."""
@@ -264,11 +295,13 @@ class DivByConstOp(Op):
     def compute(self, node: Node, input_values: List[np.ndarray]) -> np.ndarray:
         """Return the element-wise division of the input value and the constant."""
         """TODO: Your code here"""
-
+        assert len(input_values) == 1
+        return input_values[0] / node.constant
+    
     def gradient(self, node: Node, output_grad: Node) -> List[Node]:
         """Given gradient of division node, return partial adjoint to the input."""
         """TODO: Your code here"""
-
+        return [div_by_const(output_grad, node.constant)]
 
 class MatMulOp(Op):
     """Matrix multiplication op of two nodes."""
@@ -311,6 +344,11 @@ class MatMulOp(Op):
         always 2d numpy.ndarray.
         """
         """TODO: Your code here"""
+        assert len(input_values) == 2
+        mat_A =  input_values[0].T if node.attrs["trans_A"] else input_values[0]
+        mat_B =  input_values[1].T if node.attrs["trans_B"] else input_values[1]
+
+        return mat_A @ mat_B
 
     def gradient(self, node: Node, output_grad: Node) -> List[Node]:
         """Given gradient of matmul node, return partial adjoint to each input.
@@ -324,7 +362,18 @@ class MatMulOp(Op):
         - You may want to look up some materials for the gradients of matmul.
         """
         """TODO: Your code here"""
+        A_T = node.trans_A
+        B_T = node.trans_B
+        if A_T:
+            grad_1 = matmul(node.inputs[1], output_grad, trans_A=B_T, trans_B=True)
+        else:
+            grad_1 = matmul(output_grad, node.inputs[1], trans_B=not B_T)
 
+        if B_T:
+            grad_2 = matmul(output_grad, node.inputs[0], trans_A=True, trans_B=A_T)
+        else:
+            grad_2 = matmul(node.inputs[0], output_grad, trans_A=not A_T)
+        return [grad_1, grad_2]
 
 class ZerosLikeOp(Op):
     """Zeros-like op that returns an all-zero array with the same shape as the input."""
@@ -355,7 +404,56 @@ class OnesLikeOp(Op):
     def gradient(self, node: Node, output_grad: Node) -> List[Node]:
         return [zeros_like(node.inputs[0])]
 
+class SumOp(Op): # TODO
+    """Sum op that sum along a given axis. Only apply in 2d case """
 
+    def __call__(self, node_A: Node, axis: int = 0, keepdims: bool = False) -> Node:
+        return Node(
+            inputs=[node_A], 
+            op=self,
+            attrs={"axis": axis, "keepdims": keepdims}, 
+            name=f"Sum({node_A.name})")
+
+    def compute(self, node: Node, input_values: List[np.ndarray]) -> np.ndarray:
+        assert len(input_values) == 1
+        return np.sum(input_values[0], axis=node.axis, keepdims=node.keepdims)
+
+    def gradient(self, node: Node, output_grad: Node) -> List[Node]:
+        return [broadcast_to(output_grad, node.inputs[0])]
+    
+class BroadCastToOp(Op): # TODO
+    """Braodcast op that broadcast A to B. Only apply in 2d case """
+
+    def __call__(self, node_A: Node, node_B: Node) -> Node:
+        return Node(inputs=[node_A, node_B], op=self, name=f"Broadcastto({node_A.name}, {node_B.name})")
+
+    def compute(self, node: Node, input_values: List[np.ndarray]) -> np.ndarray:
+        assert len(input_values) == 2
+        return np.broadcast_to(input_values[0], input_values[1].shape)
+
+    def gradient(self, node: Node, output_grad: Node) -> List[Node]:
+        return [sum(output_grad, axis=0, keepdims=False), zeros_like(node.inputs[1])]
+
+class ExpOp(Op):
+    def __call__(self, node_A: Node) -> Node:
+        return Node(inputs=[node_A], op=self, name=f"exp({node_A.name})")
+
+    def compute(self, node: Node, input_values: List[np.ndarray]) -> np.ndarray:
+        return np.exp(input_values[0])
+
+    def gradient(self, node: Node, output_grad: Node) -> List[Node]:
+        return [mul(output_grad, exp(node.inputs[0]))]   
+    
+class LogOp(Op):
+    def __call__(self, node_A: Node) -> Node:
+        return Node(inputs=[node_A], op=self, name=f"log({node_A.name})")
+
+    def compute(self, node: Node, input_values: List[np.ndarray]) -> np.ndarray:
+        return np.log(input_values[0])
+
+    def gradient(self, node: Node, output_grad: Node) -> List[Node]:
+        return [div(output_grad, node.inputs[0])]
+    
 # Create global instances of ops.
 # Your implementation should just use these instances, rather than creating new instances.
 placeholder = PlaceholderOp()
@@ -368,7 +466,29 @@ div_by_const = DivByConstOp()
 matmul = MatMulOp()
 zeros_like = ZerosLikeOp()
 ones_like = OnesLikeOp()
+broadcast_to = BroadCastToOp()
+sum = SumOp()
+exp = ExpOp()
+log = LogOp()
+sub = SubOp()
 
+def topo_sort(eval_nodes: List[Node], reversed: bool) -> List[Node]:
+    """Given eval_nodes, return the topological order of the computation graph containing these nodes."""
+    visited = set()
+    topo_order = []
+    
+    def dfs(node : Node) -> None:
+        visited.add(node)
+        for next in node.inputs:
+            if next not in visited:
+                dfs(next)
+        topo_order.append(node)
+    
+    for node in eval_nodes:
+        dfs(node)
+    if reversed:
+        topo_order.reverse()
+    return topo_order
 
 class Evaluator:
     """The node evaluator that computes the values of nodes in a computational graph."""
@@ -403,6 +523,19 @@ class Evaluator:
             The list of values for nodes in `eval_nodes` field.
         """
         """TODO: Your code here"""
+        node_to_val = input_values.copy()
+        sorted = topo_sort(self.eval_nodes, False)
+        for node in sorted:
+            if node in node_to_val:
+                continue
+            for input_node in node.inputs:
+                if input_node not in node_to_val:
+                    raise ValueError(f"Node {node} depends on {input_node}, but its value is missing.")
+            inputs = [node_to_val[input_node] for input_node in node.inputs]
+            node_to_val[node] = node.op.compute(node, inputs)
+        
+        eval_values = [node_to_val[node] for node in self.eval_nodes]
+        return eval_values
 
 
 def gradients(output_node: Node, nodes: List[Node]) -> List[Node]:
@@ -425,3 +558,19 @@ def gradients(output_node: Node, nodes: List[Node]) -> List[Node]:
     """
 
     """TODO: Your code here"""
+    topo_order = topo_sort([output_node], True)
+    node_to_grad = {output_node : ones_like(output_node)}
+
+    for node in topo_order:
+        if not node.inputs:
+            continue
+        ouput_grad = node_to_grad[node]
+        input_grads = node.op.gradient(node, ouput_grad)
+        for input_n, input_g in zip(node.inputs, input_grads):
+            if input_n in node_to_grad:
+                node_to_grad[input_n] = add(node_to_grad[input_n], input_g)
+            else:
+                node_to_grad[input_n] = input_g
+
+    grad_nodes = [node_to_grad[n] for n in nodes]
+    return grad_nodes
