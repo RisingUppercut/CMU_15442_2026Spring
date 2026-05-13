@@ -1,0 +1,12 @@
+exceptiongroup
+h5py
+iniconfig
+mpi4py
+numpy
+packaging
+pluggy
+pytest
+pytest-mpi
+pytest-reportlog
+PyYAML
+tomli
