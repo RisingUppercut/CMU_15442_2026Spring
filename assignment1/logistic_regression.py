@@ -30,7 +30,10 @@ def logistic_regression(X: ad.Node, W: ad.Node, b: ad.Node) -> ad.Node:
         When evaluating, it should have shape (batch_size, num_classes).
     """
     """TODO: Your code here"""
-
+    Z = ad.matmul(X, W)   
+    b = ad.broadcast_to(b, Z)   # 将 b 广播成 Z 的形状
+    logits = ad.add(Z, b)
+    return logits
 
 def softmax_loss(Z: ad.Node, y_one_hot: ad.Node, batch_size: int) -> ad.Node:
     """Construct the computational graph of average softmax loss over
@@ -64,7 +67,19 @@ def softmax_loss(Z: ad.Node, y_one_hot: ad.Node, batch_size: int) -> ad.Node:
     Try to think about why our softmax loss may need the batch size.
     """
     """TODO: Your code here"""
+    
+    exp_Z = ad.exp(Z)
+    sum_exp = ad.sum(exp_Z, axis=1, keepdims=True)
+    log_sum_exp = ad.log(sum_exp)  # (batch, 1)
 
+    loss_per_sample = ad.sub(log_sum_exp, 
+        ad.sum(ad.mul(y_one_hot, Z), axis=1, keepdims=True)
+    )
+
+    total_loss = ad.sum(loss_per_sample, axis=0)
+    avg_loss = ad.div_by_const(total_loss, batch_size)
+
+    return avg_loss
 
 def sgd_epoch(
     f_run_model: Callable[
@@ -125,7 +140,37 @@ def sgd_epoch(
         The average training loss of this epoch.
     """
     """TODO: Your code here"""
+    num_examples = X.shape[0]
+    num_classes = W.shape[1]
 
+    indices = np.arange(num_examples)
+    np.random.shuffle(indices)
+    X_shuffled = X[indices]
+    y_shuffled = y[indices]
+
+    total_loss = 0.0
+    num_batches = 0
+
+    for s in range(0, num_examples, batch_size):
+        e = min(s + batch_size, num_examples)
+        X_batch = X_shuffled[s:e]
+        y_batch = y_shuffled[s:e]
+
+        cur_batch_size = len(y_batch)
+        y_one_hot = np.zeros((cur_batch_size, num_classes))
+        y_one_hot[np.arange(cur_batch_size), y_batch] = 1
+        _, loss_val, grad_W, grad_b = f_run_model(X_batch, y_one_hot, W, b)
+
+        total_loss += loss_val.item() if isinstance(loss_val, np.ndarray) else loss_val
+        num_batches += 1
+
+        W = W - lr * grad_W
+        b = b - lr * grad_b
+
+   
+    avg_loss = total_loss / num_batches
+
+    return W, b, np.array(avg_loss)
 
 def train_model():
     """Train a logistic regression model with handwritten digit dataset.
