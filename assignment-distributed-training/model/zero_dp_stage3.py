@@ -372,5 +372,15 @@ class ZeroDPAdam(object):
                 }
 
             """TODO: Your code here"""
+            state = self.state[key]
+            m, v = state["m"], state["v"]
+            
+            m[:] = self.beta1 * m + (1 - self.beta1) * grad
+            v[:] = self.beta2 * v + (1 - self.beta2) * (grad * grad)
+            
+            m_hat = m / (1 - self.beta1 ** self.step_idx)
+            v_hat = v / (1 - self.beta2 ** self.step_idx)
+            
+            param -= self.lr * m_hat / (np.sqrt(v_hat) + self.eps)
 
-        raise NotImplementedError
+        # raise NotImplementedError
