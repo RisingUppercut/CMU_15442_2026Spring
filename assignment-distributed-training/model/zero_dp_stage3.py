@@ -5,6 +5,7 @@ sys.path.append("..")
 
 from typing import List, Tuple, Dict
 from model.Layers import ReLULayer, CrossEntropyLossLayer
+from mpi4py import MPI
 
 class ZeroDPStage3FCLayer(object):
     def __init__(
@@ -112,9 +113,19 @@ class ZeroDPStage3FCLayer(object):
         # num_shards by padding zeros at the end of the flattened tensor before 
         # partitioning. The returned shard should INCLUDE the padded elements.
         # We keep track of the original shard_size (without padding) for
-        # later use in communication.
 
-        return (np.empty(8), 8)
+        shard_size = (tensor.size + num_shards - 1) // num_shards
+        padding_size = shard_size * num_shards - tensor.size
+        flat_tensor = tensor.flatten()
+
+        if padding_size > 0:
+            flat_tensor = np.pad(flat_tensor, (0, padding_size), mode='constant', constant_values=0.)
+        
+        start = shard_size * shard_idx 
+        end = shard_size * (shard_idx + 1)
+
+        return flat_tensor[start:end], shard_size
+        # return (np.empty(8), 8)
 
     def zero_grad(self):
         self.grad_w_shard = np.zeros_like(self.w_shard)
@@ -142,9 +153,17 @@ class ZeroDPStage3FCLayer(object):
         self.x = x
 
         """TODO: Your code here"""
+        collected_w = np.empty((self.w_shard_size * self.dp_size), dtype=self.w_shard.dtype)
+        self.comm.Allgather(self.w_shard, collected_w)
+        w = collected_w[:self.in_dim*self.out_dim].reshape(self.in_dim, self.out_dim)
 
+        collected_b = np.empty((self.b_shard_size * self.dp_size), dtype=self.w_shard.dtype)
+        self.comm.Allgather(self.b_shard, collected_b)
+        b = collected_b[:self.out_dim].reshape(1, self.out_dim)
 
-        raise NotImplementedError
+        out = self.x @ w + b
+        return out 
+        # raise NotImplementedError
 
     def backward(self, output_grad: np.ndarray) -> List[np.ndarray]:
         """Backward pass under ZeRO-DP Stage 3.
@@ -180,7 +199,45 @@ class ZeroDPStage3FCLayer(object):
 
         """TODO: Your code here"""
 
-        raise NotImplementedError
+        collected_w = np.empty((self.w_shard_size * self.dp_size), dtype=self.w_shard.dtype)
+        self.comm.Allgather(self.w_shard, collected_w)
+        w = collected_w[:self.in_dim*self.out_dim].reshape(self.in_dim, self.out_dim)
+
+        # collected_b = np.empty((self.b_shard_size * self.dp_size), dtype=self.w_shard.dtype)
+        # self.comm.Allgather(self.b_shard, collected_b)
+        # b = collected_b[:self.out_dim].reshape(1, self.out_dim)
+
+        
+        full_grad_w = self.x.T @ output_grad 
+        full_grad_b = np.sum(output_grad, axis=0)
+        
+        w_shard_size = (full_grad_w.size + self.dp_size - 1) // self.dp_size
+        w_padding_size = w_shard_size * self.dp_size - full_grad_w.size
+        flat_grad_w = full_grad_w.flatten()
+
+        if w_padding_size > 0:
+            flat_grad_w = np.pad(flat_grad_w, (0, w_padding_size), mode='constant', constant_values=0.)
+
+        b_shard_size = (full_grad_b.size + self.dp_size - 1) // self.dp_size
+        b_padding_size = b_shard_size * self.dp_size - full_grad_b.size
+        flat_grad_b = full_grad_b.flatten()
+
+        if b_padding_size > 0:
+            flat_grad_b = np.pad(flat_grad_b, (0, b_padding_size), mode='constant', constant_values=0.)
+
+        grad_w_shard = np.empty(w_shard_size, dtype=flat_grad_w.dtype)
+        grad_b_shard = np.empty(b_shard_size, dtype=flat_grad_b.dtype)
+
+        self.comm.Reduce_scatter(flat_grad_w, grad_w_shard, op=MPI.SUM)
+        self.comm.Reduce_scatter(flat_grad_b, grad_b_shard, op=MPI.SUM)
+
+        self.grad_w_shard[:] = grad_w_shard
+        self.grad_b_shard[:] = grad_b_shard
+        
+        grad_x = output_grad @ w.T
+
+        return [grad_x]
+        # raise NotImplementedError
 
 
 class ZeroDPMLPModel(object):
