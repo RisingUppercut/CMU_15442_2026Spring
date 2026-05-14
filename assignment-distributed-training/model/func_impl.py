@@ -127,7 +127,14 @@ def naive_collect_forward_input(
     #       might not align with your expected layout. In order to get the correct layout, you may wish to use some NumPy
     #       functions (np.split and np.concatenate might be helpful).
 
-    raise NotImplementedError
+    collected = np.empty((x.shape[0] * mp_size, x.shape[1]), dtype=x.dtype)
+    mp_comm.Allgather(x, collected)
+
+    chunks = np.split(collected, mp_size, axis=0)
+    collected_x = np.concatenate(chunks, axis=1)
+    # raise NotImplementedError
+
+    return collected_x
 
 
 def naive_collect_forward_output(
@@ -158,8 +165,15 @@ def naive_collect_forward_output(
     """TODO: Your code here"""
 
     # Hint: you might have just implemented something similar ^-^
+    collected = np.empty((out.shape[0] * mp_size, out.shape[1]), dtype=out.dtype)
+    mp_comm.Allgather(out, collected)
 
-    raise NotImplementedError
+    chunks = np.split(collected, mp_size, axis=0)
+    collected_out = np.concatenate(chunks, axis=1)
+    # raise NotImplementedError
+
+    return collected_out
+    # raise NotImplementedError
 
 
 def megatron_collect_forward_input(
