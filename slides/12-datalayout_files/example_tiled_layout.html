@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<!-- saved from url=(0090)file:///D:/Courses/CMU_15442_26Spring/slides/12-datalayout_files/example_tiled_layout.html -->
+<html lang="en" data-immersive-translate-page-theme="light"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+
+<title>Tiled Layout Derivation</title>
+<link rel="stylesheet" href="file:///D:/Courses/CMU_15442_26Spring/slides/12-datalayout_files/viz-base.css">
+<script src="file:///D:/Courses/CMU_15442_26Spring/slides/12-datalayout_files/viz-base.js.%E4%B8%8B%E8%BD%BD"></script>
+<style>
+  .content {
+    display: flex; align-items: flex-start; gap: 60px;
+    justify-content: center;
+    max-width: 1200px; margin: 20px auto 0; padding: 0 24px;
+  }
+
+  .step {
+    display: flex; align-items: baseline; gap: 0;
+    margin-bottom: 6px;
+    font-family: 'SF Mono','Fira Code', monospace;
+    font-weight: 600;
+  }
+  .step-label {
+    font-size: 14px; font-weight: 700; color: var(--dim);
+    min-width: 130px; text-align: right; padding-right: 16px;
+    font-family: 'Inter','SF Pro', system-ui, sans-serif;
+  }
+
+  /* Aligned columns for tuple elements */
+  .cols { display: inline-flex; align-items: baseline; }
+  .col {
+    display: inline-flex; align-items: baseline; justify-content: center;
+    min-width: 70px; text-align: center; font-size: 22px;
+  }
+  .col-narrow { min-width: 20px; font-size: 22px; }
+  .col-wide { min-width: 90px; }
+
+  .s-shape { color: #3b82f6; }
+  .s-stride { color: #e85d04; }
+  .s-idx { color: #7c3aed; }
+  .s-plain { color: var(--text); }
+  .s-dim { color: var(--dim); font-size: 15px; }
+  .s-op { color: var(--text); font-size: 18px; }
+
+  /* Arrow between steps */
+  .arrow-row {
+    margin: 4px 0 4px 146px;
+    color: var(--dim); font-size: 14px;
+    font-family: 'Inter','SF Pro', system-ui, sans-serif;
+  }
+
+  /* Derivation panel — styled like formula box in shape_stride_notation */
+  .derivation {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 18px 24px;
+    box-shadow: 0 1px 3px rgba(0,0,0,.06);
+  }
+  .derivation .f-title {
+    font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 12px;
+  }
+
+  /* addr formula (inline) */
+  .addr-row {
+    display: flex; align-items: baseline; gap: 0;
+    margin-bottom: 6px;
+    font-family: 'SF Mono','Fira Code', monospace;
+    font-weight: 600; font-size: 16px;
+  }
+  .addr-row .s-idx { font-size: 14px; }
+  .addr-row .s-stride { font-size: 16px; }
+  .addr-row .s-op { font-size: 14px; }
+
+  .example-line {
+    margin-top: 12px;
+    font-size: 13px; color: var(--dim);
+    font-family: 'SF Mono','Fira Code', monospace; font-weight: 600;
+  }
+  .s-result { color: var(--accent); }
+
+
+  .grid-section h3 {
+    font-size: 14px; font-weight: 700; color: var(--dim); text-align: center;
+    margin-bottom: 8px; font-family: 'Inter','SF Pro', system-ui, sans-serif;
+  }
+  .mgrid {
+    display: grid; gap: 2px;
+    position: relative;
+  }
+  .mc {
+    width: 34px; height: 34px; border-radius: 3px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px; font-weight: 600; color: var(--dim);
+    font-family: 'SF Mono','Fira Code', monospace;
+    background: #eef0f4;
+  }
+  .mhdr {
+    font-size: 9px; color: var(--dim); font-weight: 600;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'SF Mono','Fira Code', monospace;
+  }
+  /* Tile outlines via SVG overlay */
+  .mgrid-wrap { position: relative; display: inline-block; padding: 3px; }
+  .tile-overlay {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    pointer-events: none; overflow: visible;
+  }
+
+  /* Top layout banner (visible even in figure mode) */
+  .layout-banner {
+    text-align: center; margin-bottom: 16px;
+  }
+  .layout-banner .layout-main {
+    display: inline-block;
+    padding: 10px 28px;
+    font-family: 'SF Mono','Fira Code', monospace;
+    font-size: 24px; font-weight: 700;
+  }
+</style>
+</head>
+<body class="figure notitle">
+
+<h1>Layout: S[(4, 2, 2, 4) : (16, 4, 8, 1)]</h1>
+<div class="sub">Layout: S[(8, 8) : (8, 1)] → tile(2, 4)</div>
+
+<div class="layout-banner">
+  <div class="layout-main">
+    <span class="s-plain">Layout: S[(</span><span class="s-shape">4, 2, 2, 4</span><span class="s-plain">) : (</span><span class="s-stride">16, 4, 8, 1</span><span class="s-plain">)]</span>
+  </div>
+</div>
+
+<div class="content">
+  <!-- Left: 8×8 matrix with tile outlines -->
+  <div class="grid-section">
+    <div class="mgrid-wrap">
+      <div class="mgrid" id="mgrid" style="grid-template-columns: 20px repeat(8, 34px);"><div class="mhdr"></div><div class="mhdr">0</div><div class="mhdr">1</div><div class="mhdr">2</div><div class="mhdr">3</div><div class="mhdr">4</div><div class="mhdr">5</div><div class="mhdr">6</div><div class="mhdr">7</div><div class="mhdr">0</div><div class="mc">0</div><div class="mc">1</div><div class="mc">2</div><div class="mc">3</div><div class="mc">4</div><div class="mc">5</div><div class="mc">6</div><div class="mc">7</div><div class="mhdr">1</div><div class="mc">8</div><div class="mc">9</div><div class="mc">10</div><div class="mc">11</div><div class="mc">12</div><div class="mc">13</div><div class="mc">14</div><div class="mc">15</div><div class="mhdr">2</div><div class="mc">16</div><div class="mc">17</div><div class="mc">18</div><div class="mc">19</div><div class="mc">20</div><div class="mc">21</div><div class="mc">22</div><div class="mc">23</div><div class="mhdr">3</div><div class="mc">24</div><div class="mc">25</div><div class="mc">26</div><div class="mc">27</div><div class="mc">28</div><div class="mc">29</div><div class="mc">30</div><div class="mc">31</div><div class="mhdr">4</div><div class="mc">32</div><div class="mc">33</div><div class="mc">34</div><div class="mc">35</div><div class="mc">36</div><div class="mc">37</div><div class="mc">38</div><div class="mc">39</div><div class="mhdr">5</div><div class="mc">40</div><div class="mc">41</div><div class="mc">42</div><div class="mc">43</div><div class="mc">44</div><div class="mc">45</div><div class="mc">46</div><div class="mc">47</div><div class="mhdr">6</div><div class="mc">48</div><div class="mc">49</div><div class="mc">50</div><div class="mc">51</div><div class="mc">52</div><div class="mc">53</div><div class="mc">54</div><div class="mc">55</div><div class="mhdr">7</div><div class="mc">56</div><div class="mc">57</div><div class="mc">58</div><div class="mc">59</div><div class="mc">60</div><div class="mc">61</div><div class="mc">62</div><div class="mc">63</div><div class="mhdr"></div><div class="mhdr">0</div><div class="mhdr">1</div><div class="mhdr">2</div><div class="mhdr">3</div><div class="mhdr">4</div><div class="mhdr">5</div><div class="mhdr">6</div><div class="mhdr">7</div><div class="mhdr">0</div><div class="mc">0</div><div class="mc">1</div><div class="mc">2</div><div class="mc">3</div><div class="mc">4</div><div class="mc">5</div><div class="mc">6</div><div class="mc">7</div><div class="mhdr">1</div><div class="mc">8</div><div class="mc">9</div><div class="mc">10</div><div class="mc">11</div><div class="mc">12</div><div class="mc">13</div><div class="mc">14</div><div class="mc">15</div><div class="mhdr">2</div><div class="mc">16</div><div class="mc">17</div><div class="mc">18</div><div class="mc">19</div><div class="mc">20</div><div class="mc">21</div><div class="mc">22</div><div class="mc">23</div><div class="mhdr">3</div><div class="mc">24</div><div class="mc">25</div><div class="mc">26</div><div class="mc">27</div><div class="mc">28</div><div class="mc">29</div><div class="mc">30</div><div class="mc">31</div><div class="mhdr">4</div><div class="mc">32</div><div class="mc">33</div><div class="mc">34</div><div class="mc">35</div><div class="mc">36</div><div class="mc">37</div><div class="mc">38</div><div class="mc">39</div><div class="mhdr">5</div><div class="mc">40</div><div class="mc">41</div><div class="mc">42</div><div class="mc">43</div><div class="mc">44</div><div class="mc">45</div><div class="mc">46</div><div class="mc">47</div><div class="mhdr">6</div><div class="mc">48</div><div class="mc">49</div><div class="mc">50</div><div class="mc">51</div><div class="mc">52</div><div class="mc">53</div><div class="mc">54</div><div class="mc">55</div><div class="mhdr">7</div><div class="mc">56</div><div class="mc">57</div><div class="mc">58</div><div class="mc">59</div><div class="mc">60</div><div class="mc">61</div><div class="mc">62</div><div class="mc">63</div></div>
+      <svg class="tile-overlay" id="tile-ov" viewBox="0 0 314 606.4000244140625"><rect x="24" y="15.199996948242188" width="144" height="72.00000762939453" rx="5" fill="none" stroke="#222" stroke-width="2.5"></rect><rect x="168" y="15.199996948242188" width="144" height="72.00000762939453" rx="5" fill="none" stroke="#222" stroke-width="2.5"></rect><rect x="24" y="87.20000457763672" width="144" height="72" rx="5" fill="none" stroke="#222" stroke-width="2.5"></rect><rect x="168" y="87.20000457763672" width="144" height="72" rx="5" fill="none" stroke="#222" stroke-width="2.5"></rect><rect x="24" y="159.19998931884766" width="144" height="72" rx="5" fill="none" stroke="#222" stroke-width="2.5"></rect><rect x="168" y="159.19998931884766" width="144" height="72" rx="5" fill="none" stroke="#222" stroke-width="2.5"></rect><rect x="24" y="231.19998931884766" width="144" height="72" rx="5" fill="none" stroke="#222" stroke-width="2.5"></rect><rect x="168" y="231.19998931884766" width="144" height="72" rx="5" fill="none" stroke="#222" stroke-width="2.5"></rect></svg>
+    </div>
+  </div>
+
+  <!-- Right: derivation steps -->
+  <div class="derivation">
+    <div class="f-title">Address computation</div>
+    <div class="step">
+      <div class="step-label">Original shape</div>
+      <div class="cols">
+        <span class="col col-narrow s-plain">(</span>
+        <span class="col s-shape">8</span>
+        <span class="col col-narrow s-plain">,</span>
+        <span class="col s-shape">8</span>
+        <span class="col col-narrow s-plain">)</span>
+      </div>
+    </div>
+
+    <div class="arrow-row">↓ reshape</div>
+
+    <div class="step">
+      <div class="step-label">Tiled shape</div>
+      <div class="cols">
+        <span class="col col-narrow s-plain">(</span>
+        <span class="col s-shape">4</span>
+        <span class="col col-narrow s-plain">,</span>
+        <span class="col s-shape">2</span>
+        <span class="col col-narrow s-plain">,</span>
+        <span class="col s-shape">2</span>
+        <span class="col col-narrow s-plain">,</span>
+        <span class="col s-shape">4</span>
+        <span class="col col-narrow s-plain">)</span>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-label">Mapped indices</div>
+      <div class="cols">
+        <span class="col col-narrow s-plain">(</span>
+        <span class="col s-idx" style="font-size:16px">i//2</span>
+        <span class="col col-narrow s-plain">,</span>
+        <span class="col s-idx" style="font-size:16px">i%2</span>
+        <span class="col col-narrow s-plain">,</span>
+        <span class="col s-idx" style="font-size:16px">j//4</span>
+        <span class="col col-narrow s-plain">,</span>
+        <span class="col s-idx" style="font-size:16px">j%4</span>
+        <span class="col col-narrow s-plain">)</span>
+      </div>
+    </div>
+
+    <div class="addr-row">
+      <div class="step-label">addr =</div>
+      <span class="s-idx">(i//2)</span><span class="s-op"> × </span><span class="s-stride">16</span>
+      <span class="s-plain"> + </span>
+      <span class="s-idx">(i%2)</span><span class="s-op"> × </span><span class="s-stride">4</span>
+      <span class="s-plain"> + </span>
+      <span class="s-idx">(j//4)</span><span class="s-op"> × </span><span class="s-stride">8</span>
+      <span class="s-plain"> + </span>
+      <span class="s-idx">(j%4)</span><span class="s-op"> × </span><span class="s-stride">1</span>
+    </div>
+
+    <div class="example-line">
+      Example: addr(<span class="s-shape">2</span>, <span class="s-shape">3</span>) = <span class="s-idx">1</span>×<span class="s-stride">16</span> + <span class="s-idx">0</span>×<span class="s-stride">4</span> + <span class="s-idx">0</span>×<span class="s-stride">8</span> + <span class="s-idx">3</span>×<span class="s-stride">1</span> = <span class="s-result">19</span>
+    </div>
+  </div>
+</div>
+
+<script>
+const N = 8, TR = 2, TC = 4;
+const TILE_COLOR = '#222';
+
+const mgrid = document.getElementById('mgrid');
+mgrid.style.gridTemplateColumns = '20px repeat(' + N + ', 34px)';
+
+// Corner + col headers
+mgrid.appendChild(Object.assign(document.createElement('div'), { className: 'mhdr' }));
+for (let c = 0; c < N; c++) {
+  const h = document.createElement('div'); h.className = 'mhdr'; h.textContent = c; mgrid.appendChild(h);
+}
+// Rows
+for (let r = 0; r < N; r++) {
+  const rl = document.createElement('div'); rl.className = 'mhdr'; rl.textContent = r; mgrid.appendChild(rl);
+  for (let c = 0; c < N; c++) {
+    const d = document.createElement('div'); d.className = 'mc';
+    d.textContent = r * N + c;
+    mgrid.appendChild(d);
+  }
+}
+
+// Draw tile outlines
+function drawTileOutlines() {
+  const svg = document.getElementById('tile-ov');
+  const wrap = svg.parentElement;
+  const wrapR = wrap.getBoundingClientRect();
+  svg.innerHTML = '';
+  svg.setAttribute('viewBox', '0 0 ' + wrapR.width + ' ' + wrapR.height);
+
+  const cells = mgrid.querySelectorAll('.mc');
+  const nTR = N / TR, nTC = N / TC;
+  for (let tr = 0; tr < nTR; tr++) {
+    for (let tc = 0; tc < nTC; tc++) {
+      // Top-left cell of this tile
+      const tl = cells[tr * TR * N + tc * TC];
+      // Bottom-right cell
+      const br = cells[(tr * TR + TR - 1) * N + (tc * TC + TC - 1)];
+      const tlR = tl.getBoundingClientRect();
+      const brR = br.getBoundingClientRect();
+      const x = tlR.left - wrapR.left - 1;
+      const y = tlR.top - wrapR.top - 1;
+      const w = brR.right - tlR.left + 2;
+      const h = brR.bottom - tlR.top + 2;
+      const color = TILE_COLOR;
+      const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      rect.setAttribute('x', x);
+      rect.setAttribute('y', y);
+      rect.setAttribute('width', w);
+      rect.setAttribute('height', h);
+      rect.setAttribute('rx', '5');
+      rect.setAttribute('fill', 'none');
+      rect.setAttribute('stroke', color);
+      rect.setAttribute('stroke-width', '2.5');
+      svg.appendChild(rect);
+    }
+  }
+}
+window.addEventListener('load', drawTileOutlines);
+window.addEventListener('resize', drawTileOutlines);
+</script>
+
+
+</body></html>

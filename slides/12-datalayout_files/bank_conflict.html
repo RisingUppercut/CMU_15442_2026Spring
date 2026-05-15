@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<!-- saved from url=(0083)file:///D:/Courses/CMU_15442_26Spring/slides/12-datalayout_files/bank_conflict.html -->
+<html lang="en" data-immersive-translate-page-theme="light"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+
+<title>Memory Bank Conflicts</title>
+<link rel="stylesheet" href="file:///D:/Courses/CMU_15442_26Spring/slides/12-datalayout_files/viz-base.css">
+<script src="file:///D:/Courses/CMU_15442_26Spring/slides/12-datalayout_files/viz-base.js.%E4%B8%8B%E8%BD%BD"></script>
+<style>
+  .wrap { max-width:900px; margin:0 auto; display:flex; flex-direction:column; gap:14px; }
+
+  .row-box {
+    background:var(--surface); border-radius:10px; padding:14px 18px 12px;
+    border:1px solid var(--border); box-shadow:0 1px 3px rgba(0,0,0,.06);
+  }
+  .row-box h3 {
+    font-size:14px; font-weight:700; margin-bottom:8px; text-align:center;
+    font-family:'SF Mono','Fira Code',monospace;
+  }
+
+  /* Flat memory strip */
+  .mem-strip { display:flex; gap:3px; }
+  .mc {
+    flex:1; height:38px; border-radius:5px; display:flex; align-items:center; justify-content:center;
+    font-size:12px; font-weight:700; color:#fff; text-shadow:0 1px 2px rgba(0,0,0,.25);
+    border:2.5px solid transparent; transition:all .18s; min-width:0;
+  }
+  .mc.rd { border-color:#222; border-width:3px; z-index:1; }
+  .mc.dm { opacity:.18; }
+
+  /* Bank bar */
+  .blab { font-size:10px; color:var(--dim); text-align:center; margin-top:8px; margin-bottom:2px; font-weight:600; }
+  .bbar { display:flex; gap:3px; }
+  .bs {
+    flex:1; height:26px; border-radius:5px; display:flex; align-items:center; justify-content:center;
+    font-size:10px; font-weight:700; color:#fff; border:2.5px solid transparent; transition:all .18s;
+    text-shadow:0 1px 2px rgba(0,0,0,.2);
+  }
+  .bs.ac { border-color:#222; box-shadow:0 0 6px rgba(59,130,246,.3); }
+  .bs.cf { border-color:#d32f2f; box-shadow:0 0 8px rgba(211,47,47,.4); }
+  .bs.dm { opacity:.12; }
+
+  .st { text-align:center; margin-top:6px; font-size:13px; font-weight:600; }
+  .good { color:#2e7d32; } .bad { color:#c62828; }
+
+  /* Legend */
+  .leg { gap:0; margin-top:10px; }
+  .swtch.brd { border:3px solid #222; background:#ccc; }
+  .swtch.faded { background:#ccc; opacity:.18; }
+</style>
+<style data-id="immersive-translate-input-injected-css"></style></head>
+<body class="figure notitle">
+
+<h1>Memory Bank Conflicts</h1>
+<div class="sub">bank = addr % 4 &nbsp;|&nbsp; parallel reads only when accessing different banks</div>
+
+<div class="wrap">
+  <!-- Row 0: All banks -->
+  <div class="row-box" id="r0">
+    <h3>Memory (4 Banks)</h3>
+    <div class="mem-strip" id="g0"><div class="mc" style="background: rgb(91, 155, 213);">0</div><div class="mc" style="background: rgb(237, 154, 60);">1</div><div class="mc" style="background: rgb(217, 85, 85);">2</div><div class="mc" style="background: rgb(69, 181, 165);">3</div><div class="mc" style="background: rgb(91, 155, 213);">4</div><div class="mc" style="background: rgb(237, 154, 60);">5</div><div class="mc" style="background: rgb(217, 85, 85);">6</div><div class="mc" style="background: rgb(69, 181, 165);">7</div><div class="mc" style="background: rgb(91, 155, 213);">8</div><div class="mc" style="background: rgb(237, 154, 60);">9</div><div class="mc" style="background: rgb(217, 85, 85);">10</div><div class="mc" style="background: rgb(69, 181, 165);">11</div><div class="mc" style="background: rgb(91, 155, 213);">12</div><div class="mc" style="background: rgb(237, 154, 60);">13</div><div class="mc" style="background: rgb(217, 85, 85);">14</div><div class="mc" style="background: rgb(69, 181, 165);">15</div><div class="mc" style="background: rgb(91, 155, 213);">0</div><div class="mc" style="background: rgb(237, 154, 60);">1</div><div class="mc" style="background: rgb(217, 85, 85);">2</div><div class="mc" style="background: rgb(69, 181, 165);">3</div><div class="mc" style="background: rgb(91, 155, 213);">4</div><div class="mc" style="background: rgb(237, 154, 60);">5</div><div class="mc" style="background: rgb(217, 85, 85);">6</div><div class="mc" style="background: rgb(69, 181, 165);">7</div><div class="mc" style="background: rgb(91, 155, 213);">8</div><div class="mc" style="background: rgb(237, 154, 60);">9</div><div class="mc" style="background: rgb(217, 85, 85);">10</div><div class="mc" style="background: rgb(69, 181, 165);">11</div><div class="mc" style="background: rgb(91, 155, 213);">12</div><div class="mc" style="background: rgb(237, 154, 60);">13</div><div class="mc" style="background: rgb(217, 85, 85);">14</div><div class="mc" style="background: rgb(69, 181, 165);">15</div></div>
+  </div>
+
+  <!-- Row 1: No conflict -->
+  <div class="row-box" id="r1">
+    <h3 style="color:#2e7d32">No Conflict, read [0, 1, 2, 3]</h3>
+    <div class="mem-strip" id="g1"><div class="mc rd" style="background: rgb(91, 155, 213);">0</div><div class="mc rd" style="background: rgb(237, 154, 60);">1</div><div class="mc rd" style="background: rgb(217, 85, 85);">2</div><div class="mc rd" style="background: rgb(69, 181, 165);">3</div><div class="mc dm" style="background: rgb(91, 155, 213);">4</div><div class="mc dm" style="background: rgb(237, 154, 60);">5</div><div class="mc dm" style="background: rgb(217, 85, 85);">6</div><div class="mc dm" style="background: rgb(69, 181, 165);">7</div><div class="mc dm" style="background: rgb(91, 155, 213);">8</div><div class="mc dm" style="background: rgb(237, 154, 60);">9</div><div class="mc dm" style="background: rgb(217, 85, 85);">10</div><div class="mc dm" style="background: rgb(69, 181, 165);">11</div><div class="mc dm" style="background: rgb(91, 155, 213);">12</div><div class="mc dm" style="background: rgb(237, 154, 60);">13</div><div class="mc dm" style="background: rgb(217, 85, 85);">14</div><div class="mc dm" style="background: rgb(69, 181, 165);">15</div><div class="mc rd" style="background: rgb(91, 155, 213);">0</div><div class="mc rd" style="background: rgb(237, 154, 60);">1</div><div class="mc rd" style="background: rgb(217, 85, 85);">2</div><div class="mc rd" style="background: rgb(69, 181, 165);">3</div><div class="mc dm" style="background: rgb(91, 155, 213);">4</div><div class="mc dm" style="background: rgb(237, 154, 60);">5</div><div class="mc dm" style="background: rgb(217, 85, 85);">6</div><div class="mc dm" style="background: rgb(69, 181, 165);">7</div><div class="mc dm" style="background: rgb(91, 155, 213);">8</div><div class="mc dm" style="background: rgb(237, 154, 60);">9</div><div class="mc dm" style="background: rgb(217, 85, 85);">10</div><div class="mc dm" style="background: rgb(69, 181, 165);">11</div><div class="mc dm" style="background: rgb(91, 155, 213);">12</div><div class="mc dm" style="background: rgb(237, 154, 60);">13</div><div class="mc dm" style="background: rgb(217, 85, 85);">14</div><div class="mc dm" style="background: rgb(69, 181, 165);">15</div></div>
+    <div class="blab">Bank Activity</div>
+    <div class="bbar" id="b1"><div class="bs ac" style="background: rgb(91, 155, 213);">B0</div><div class="bs ac" style="background: rgb(237, 154, 60);">B1</div><div class="bs ac" style="background: rgb(217, 85, 85);">B2</div><div class="bs ac" style="background: rgb(69, 181, 165);">B3</div><div class="bs ac" style="background: rgb(91, 155, 213);">B0</div><div class="bs ac" style="background: rgb(237, 154, 60);">B1</div><div class="bs ac" style="background: rgb(217, 85, 85);">B2</div><div class="bs ac" style="background: rgb(69, 181, 165);">B3</div></div>
+    <div class="st" id="s1"><span class="good">4/4 banks · 1 cycle · No conflict</span></div>
+  </div>
+
+  <!-- Row 2: Conflict -->
+  <div class="row-box" id="r2">
+    <h3 style="color:#c62828">Conflict, read [0, 4, 8, 12]</h3>
+    <div class="mem-strip" id="g2"><div class="mc rd" style="background: rgb(91, 155, 213);">0</div><div class="mc dm" style="background: rgb(237, 154, 60);">1</div><div class="mc dm" style="background: rgb(217, 85, 85);">2</div><div class="mc dm" style="background: rgb(69, 181, 165);">3</div><div class="mc rd" style="background: rgb(91, 155, 213);">4</div><div class="mc dm" style="background: rgb(237, 154, 60);">5</div><div class="mc dm" style="background: rgb(217, 85, 85);">6</div><div class="mc dm" style="background: rgb(69, 181, 165);">7</div><div class="mc rd" style="background: rgb(91, 155, 213);">8</div><div class="mc dm" style="background: rgb(237, 154, 60);">9</div><div class="mc dm" style="background: rgb(217, 85, 85);">10</div><div class="mc dm" style="background: rgb(69, 181, 165);">11</div><div class="mc rd" style="background: rgb(91, 155, 213);">12</div><div class="mc dm" style="background: rgb(237, 154, 60);">13</div><div class="mc dm" style="background: rgb(217, 85, 85);">14</div><div class="mc dm" style="background: rgb(69, 181, 165);">15</div><div class="mc rd" style="background: rgb(91, 155, 213);">0</div><div class="mc dm" style="background: rgb(237, 154, 60);">1</div><div class="mc dm" style="background: rgb(217, 85, 85);">2</div><div class="mc dm" style="background: rgb(69, 181, 165);">3</div><div class="mc rd" style="background: rgb(91, 155, 213);">4</div><div class="mc dm" style="background: rgb(237, 154, 60);">5</div><div class="mc dm" style="background: rgb(217, 85, 85);">6</div><div class="mc dm" style="background: rgb(69, 181, 165);">7</div><div class="mc rd" style="background: rgb(91, 155, 213);">8</div><div class="mc dm" style="background: rgb(237, 154, 60);">9</div><div class="mc dm" style="background: rgb(217, 85, 85);">10</div><div class="mc dm" style="background: rgb(69, 181, 165);">11</div><div class="mc rd" style="background: rgb(91, 155, 213);">12</div><div class="mc dm" style="background: rgb(237, 154, 60);">13</div><div class="mc dm" style="background: rgb(217, 85, 85);">14</div><div class="mc dm" style="background: rgb(69, 181, 165);">15</div></div>
+    <div class="blab">Bank Activity</div>
+    <div class="bbar" id="b2"><div class="bs ac cf" style="background: rgb(91, 155, 213);">B0 ×4</div><div class="bs dm" style="background: rgb(237, 154, 60);">B1</div><div class="bs dm" style="background: rgb(217, 85, 85);">B2</div><div class="bs dm" style="background: rgb(69, 181, 165);">B3</div><div class="bs ac cf" style="background: rgb(91, 155, 213);">B0 ×4</div><div class="bs dm" style="background: rgb(237, 154, 60);">B1</div><div class="bs dm" style="background: rgb(217, 85, 85);">B2</div><div class="bs dm" style="background: rgb(69, 181, 165);">B3</div></div>
+    <div class="st" id="s2"><span class="bad">1/4 banks · 4 cycles · 4-way conflict</span></div>
+  </div>
+</div>
+
+<div class="leg" id="lg"><div class="leg-row"><div class="li"><div class="swtch" style="background: rgb(91, 155, 213);"></div>Bank 0</div><div class="li"><div class="swtch" style="background: rgb(237, 154, 60);"></div>Bank 1</div><div class="li"><div class="swtch" style="background: rgb(217, 85, 85);"></div>Bank 2</div><div class="li"><div class="swtch" style="background: rgb(69, 181, 165);"></div>Bank 3</div><div class="leg-sep"></div><div class="li"><div class="swtch brd"></div>Read target</div><div class="li"><div class="swtch faded"></div>Not accessed</div></div><div class="leg-row"><div class="li"><div class="swtch" style="background: rgb(91, 155, 213);"></div>Bank 0</div><div class="li"><div class="swtch" style="background: rgb(237, 154, 60);"></div>Bank 1</div><div class="li"><div class="swtch" style="background: rgb(217, 85, 85);"></div>Bank 2</div><div class="li"><div class="swtch" style="background: rgb(69, 181, 165);"></div>Bank 3</div><div class="leg-sep"></div><div class="li"><div class="swtch brd"></div>Read target</div><div class="li"><div class="swtch faded"></div>Not accessed</div></div></div>
+
+<script>
+const BANKS = 4, NCELLS = 16;
+const BK = ['#5b9bd5','#ed9a3c','#d95555','#45b5a5'];
+
+function mk(t,c){const d=document.createElement(t);if(c)d.className=c;return d;}
+
+// Row 0: all banks, no dimming
+const g0 = document.getElementById('g0');
+for (let i = 0; i < NCELLS; i++) {
+  const d = mk('div','mc');
+  d.textContent = i;
+  d.style.background = BK[i % BANKS];
+  g0.appendChild(d);
+}
+
+// Scenarios
+const scenarios = [
+  { gid:'g1', bid:'b1', sid:'s1', reads:[0,1,2,3] },
+  { gid:'g2', bid:'b2', sid:'s2', reads:[0,4,8,12] },
+];
+
+for (const sc of scenarios) {
+  const readSet = new Set(sc.reads);
+
+  // Memory strip with dimming
+  const g = document.getElementById(sc.gid);
+  for (let i = 0; i < NCELLS; i++) {
+    const d = mk('div','mc');
+    d.textContent = i;
+    d.style.background = BK[i % BANKS];
+    if (readSet.has(i)) d.classList.add('rd');
+    else d.classList.add('dm');
+    g.appendChild(d);
+  }
+
+  // Bank bar
+  const bb = document.getElementById(sc.bid);
+  const bankCount = new Map();
+  for (const addr of sc.reads) { const b = addr % BANKS; bankCount.set(b,(bankCount.get(b)||0)+1); }
+  for (let b = 0; b < BANKS; b++) {
+    const d = mk('div','bs'); d.style.background = BK[b];
+    const cnt = bankCount.get(b) || 0;
+    if (cnt > 1) { d.textContent = 'B'+b+' \u00d7'+cnt; d.classList.add('ac','cf'); }
+    else if (cnt === 1) { d.textContent = 'B'+b; d.classList.add('ac'); }
+    else { d.textContent = 'B'+b; d.classList.add('dm'); }
+    bb.appendChild(d);
+  }
+
+  // Status
+  const se = document.getElementById(sc.sid);
+  const maxConflict = Math.max(...bankCount.values());
+  if (maxConflict <= 1) {
+    se.innerHTML = '<span class="good">'+bankCount.size+'/'+BANKS+' banks \u00b7 1 cycle \u00b7 No conflict</span>';
+  } else {
+    se.innerHTML = '<span class="bad">'+bankCount.size+'/'+BANKS+' banks \u00b7 '+maxConflict+' cycles \u00b7 '+maxConflict+'-way conflict</span>';
+  }
+}
+
+// Legend
+const lg = document.getElementById('lg');
+const r1 = mk('div','leg-row');
+for (let i = 0; i < BANKS; i++) {
+  const d = mk('div','li'), w = mk('div','swtch');
+  w.style.background = BK[i];
+  d.appendChild(w); d.appendChild(document.createTextNode('Bank '+i));
+  r1.appendChild(d);
+}
+r1.appendChild(mk('div','leg-sep'));
+const enc = [['brd','Read target'],['faded','Not accessed']];
+for (const [cls,txt] of enc) {
+  const d = mk('div','li'), w = mk('div','swtch '+cls);
+  d.appendChild(w); d.appendChild(document.createTextNode(txt));
+  r1.appendChild(d);
+}
+lg.appendChild(r1);
+</script>
+
+
+</body></html>

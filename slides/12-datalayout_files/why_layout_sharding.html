@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<!-- saved from url=(0089)file:///D:/Courses/CMU_15442_26Spring/slides/12-datalayout_files/why_layout_sharding.html -->
+<html lang="en" data-immersive-translate-page-theme="light"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+
+<title>Data Layout: Sharding</title>
+<link rel="stylesheet" href="file:///D:/Courses/CMU_15442_26Spring/slides/12-datalayout_files/viz-base.css">
+<script src="file:///D:/Courses/CMU_15442_26Spring/slides/12-datalayout_files/viz-base.js.%E4%B8%8B%E8%BD%BD"></script>
+<style>
+  .wrap {
+    display: flex; align-items: center; justify-content: flex-start; gap: 40px;
+    max-width: 1500px; margin: 30px 0 0; padding: 0 24px 0 100px;
+  }
+  .label { font-size: 15px; font-weight: 700; color: var(--text); text-align: center; margin-bottom: 10px; }
+
+  /* Matrix */
+  .matrix-grid {
+    display: grid;
+    grid-template-columns: 24px repeat(4, 56px);
+    grid-template-rows: 24px repeat(4, 56px);
+    gap: 3px;
+  }
+  .hdr { font-size: 10px; color: var(--dim); font-weight: 600; display: flex; align-items: center; justify-content: center;
+    font-family: 'SF Mono','Fira Code', monospace; }
+  .m-cell {
+    border-radius: 5px; display: flex; align-items: center; justify-content: center;
+    font-size: 14px; font-weight: 700; font-family: 'SF Mono','Fira Code', monospace;
+    color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.2);
+  }
+
+  /* Arrow */
+  .arrow { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .arrow-label { font-size: 12px; color: var(--dim); font-family: 'SF Mono','Fira Code', monospace; font-weight: 600;
+    text-align: center; line-height: 1.5; }
+
+  /* GPU boxes with flat memory */
+  .gpus { display: flex; flex-direction: column; gap: 14px; }
+  .gpu-box {
+    border: 2px solid var(--border); border-radius: 10px; padding: 10px 14px;
+  }
+  .gpu-label { font-size: 13px; font-weight: 700; text-align: center; margin-bottom: 8px;
+    font-family: 'SF Mono','Fira Code', monospace; color: var(--text); }
+  .mem-strip { display: flex; gap: 2px; justify-content: center; }
+  .mem-cell {
+    width: 36px; height: 36px; border-radius: 5px; display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 700; font-family: 'SF Mono','Fira Code', monospace;
+    color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.2);
+  }
+  .mem-addrs { display: flex; gap: 2px; margin-top: 2px; justify-content: center; }
+  .mem-addr { width: 36px; text-align: center; font-size: 8px; color: var(--dim);
+    font-family: 'SF Mono','Fira Code', monospace; }
+</style>
+</head>
+<body class="figure notitle">
+
+<h1>Data Layout: Sharding</h1>
+<div class="sub">Same notation, different axis → distributed across devices</div>
+
+<div class="wrap">
+  <div>
+    <div class="label">A[i, j]</div>
+    <div class="matrix-grid" id="matrix"><div class="hdr"></div><div class="hdr">0</div><div class="hdr">1</div><div class="hdr">2</div><div class="hdr">3</div><div class="hdr">0</div><div class="m-cell" style="background: rgb(141, 176, 226);">0</div><div class="m-cell" style="background: rgb(119, 162, 223);">1</div><div class="m-cell" style="background: rgb(233, 184, 150);">2</div><div class="m-cell" style="background: rgb(230, 170, 127);">3</div><div class="hdr">1</div><div class="m-cell" style="background: rgb(96, 148, 220);">4</div><div class="m-cell" style="background: rgb(73, 133, 218);">5</div><div class="m-cell" style="background: rgb(228, 155, 104);">6</div><div class="m-cell" style="background: rgb(226, 141, 80);">7</div><div class="hdr">2</div><div class="m-cell" style="background: rgb(49, 119, 217);">8</div><div class="m-cell" style="background: rgb(35, 106, 205);">9</div><div class="m-cell" style="background: rgb(225, 126, 56);">10</div><div class="m-cell" style="background: rgb(224, 111, 31);">11</div><div class="hdr">3</div><div class="m-cell" style="background: rgb(29, 94, 185);">12</div><div class="m-cell" style="background: rgb(24, 83, 165);">13</div><div class="m-cell" style="background: rgb(204, 100, 25);">14</div><div class="m-cell" style="background: rgb(184, 88, 20);">15</div><div class="hdr"></div><div class="hdr">0</div><div class="hdr">1</div><div class="hdr">2</div><div class="hdr">3</div><div class="hdr">0</div><div class="m-cell" style="background: rgb(141, 176, 226);">0</div><div class="m-cell" style="background: rgb(119, 162, 223);">1</div><div class="m-cell" style="background: rgb(233, 184, 150);">2</div><div class="m-cell" style="background: rgb(230, 170, 127);">3</div><div class="hdr">1</div><div class="m-cell" style="background: rgb(96, 148, 220);">4</div><div class="m-cell" style="background: rgb(73, 133, 218);">5</div><div class="m-cell" style="background: rgb(228, 155, 104);">6</div><div class="m-cell" style="background: rgb(226, 141, 80);">7</div><div class="hdr">2</div><div class="m-cell" style="background: rgb(49, 119, 217);">8</div><div class="m-cell" style="background: rgb(35, 106, 205);">9</div><div class="m-cell" style="background: rgb(225, 126, 56);">10</div><div class="m-cell" style="background: rgb(224, 111, 31);">11</div><div class="hdr">3</div><div class="m-cell" style="background: rgb(29, 94, 185);">12</div><div class="m-cell" style="background: rgb(24, 83, 165);">13</div><div class="m-cell" style="background: rgb(204, 100, 25);">14</div><div class="m-cell" style="background: rgb(184, 88, 20);">15</div></div>
+  </div>
+
+  <div class="arrow">
+    <svg width="80" height="40" viewBox="0 0 80 40">
+      <path d="M8 20h56M56 12l10 8-10 8" stroke="#888" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" fill="none"></path>
+    </svg>
+    <div class="arrow-label">shard by col<br>across 2 GPUs</div>
+  </div>
+
+  <div class="gpus">
+    <div class="gpu-box" id="gpu0box" style="border-color: hsl(215, 70%, 55%);">
+      <div class="gpu-label" style="color: hsl(215, 70%, 40%);">GPU 0 — cols 0-1</div>
+      <div class="mem-strip" id="gpu0strip"><div class="mem-cell" style="background: rgb(141, 176, 226);">0</div><div class="mem-cell" style="background: rgb(119, 162, 223);">1</div><div class="mem-cell" style="background: rgb(96, 148, 220);">4</div><div class="mem-cell" style="background: rgb(73, 133, 218);">5</div><div class="mem-cell" style="background: rgb(49, 119, 217);">8</div><div class="mem-cell" style="background: rgb(35, 106, 205);">9</div><div class="mem-cell" style="background: rgb(29, 94, 185);">12</div><div class="mem-cell" style="background: rgb(24, 83, 165);">13</div><div class="mem-cell" style="background: rgb(141, 176, 226);">0</div><div class="mem-cell" style="background: rgb(119, 162, 223);">1</div><div class="mem-cell" style="background: rgb(96, 148, 220);">4</div><div class="mem-cell" style="background: rgb(73, 133, 218);">5</div><div class="mem-cell" style="background: rgb(49, 119, 217);">8</div><div class="mem-cell" style="background: rgb(35, 106, 205);">9</div><div class="mem-cell" style="background: rgb(29, 94, 185);">12</div><div class="mem-cell" style="background: rgb(24, 83, 165);">13</div></div>
+      <div class="mem-addrs" id="gpu0addrs"><div class="mem-addr">addr 0</div><div class="mem-addr">addr 1</div><div class="mem-addr">addr 2</div><div class="mem-addr">addr 3</div><div class="mem-addr">addr 4</div><div class="mem-addr">addr 5</div><div class="mem-addr">addr 6</div><div class="mem-addr">addr 7</div><div class="mem-addr">addr 0</div><div class="mem-addr">addr 1</div><div class="mem-addr">addr 2</div><div class="mem-addr">addr 3</div><div class="mem-addr">addr 4</div><div class="mem-addr">addr 5</div><div class="mem-addr">addr 6</div><div class="mem-addr">addr 7</div></div>
+    </div>
+    <div class="gpu-box" id="gpu1box" style="border-color: hsl(25, 80%, 55%);">
+      <div class="gpu-label" style="color: hsl(25, 80%, 40%);">GPU 1 — cols 2-3</div>
+      <div class="mem-strip" id="gpu1strip"><div class="mem-cell" style="background: rgb(233, 184, 150);">2</div><div class="mem-cell" style="background: rgb(230, 170, 127);">3</div><div class="mem-cell" style="background: rgb(228, 155, 104);">6</div><div class="mem-cell" style="background: rgb(226, 141, 80);">7</div><div class="mem-cell" style="background: rgb(225, 126, 56);">10</div><div class="mem-cell" style="background: rgb(224, 111, 31);">11</div><div class="mem-cell" style="background: rgb(204, 100, 25);">14</div><div class="mem-cell" style="background: rgb(184, 88, 20);">15</div><div class="mem-cell" style="background: rgb(233, 184, 150);">2</div><div class="mem-cell" style="background: rgb(230, 170, 127);">3</div><div class="mem-cell" style="background: rgb(228, 155, 104);">6</div><div class="mem-cell" style="background: rgb(226, 141, 80);">7</div><div class="mem-cell" style="background: rgb(225, 126, 56);">10</div><div class="mem-cell" style="background: rgb(224, 111, 31);">11</div><div class="mem-cell" style="background: rgb(204, 100, 25);">14</div><div class="mem-cell" style="background: rgb(184, 88, 20);">15</div></div>
+      <div class="mem-addrs" id="gpu1addrs"><div class="mem-addr">addr 0</div><div class="mem-addr">addr 1</div><div class="mem-addr">addr 2</div><div class="mem-addr">addr 3</div><div class="mem-addr">addr 4</div><div class="mem-addr">addr 5</div><div class="mem-addr">addr 6</div><div class="mem-addr">addr 7</div><div class="mem-addr">addr 0</div><div class="mem-addr">addr 1</div><div class="mem-addr">addr 2</div><div class="mem-addr">addr 3</div><div class="mem-addr">addr 4</div><div class="mem-addr">addr 5</div><div class="mem-addr">addr 6</div><div class="mem-addr">addr 7</div></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const N = 4, TOTAL = N * N;
+
+// GPU 0 = blue hue, GPU 1 = orange hue
+function gpuColor(gpuId, localIdx, localTotal) {
+  const t = localIdx / (localTotal - 1);
+  if (gpuId === 0) return `hsl(215, ${60 + t * 15}%, ${72 - t * 35}%)`;
+  return `hsl(25, ${65 + t * 15}%, ${75 - t * 35}%)`;
+}
+
+// Map matrix cell to GPU color
+function matrixColor(r, c) {
+  if (c < 2) return gpuColor(0, r * 2 + c, 8);
+  return gpuColor(1, r * 2 + (c - 2), 8);
+}
+
+// Build matrix — cells show flat index (0..15)
+const matrix = document.getElementById('matrix');
+matrix.appendChild(Object.assign(document.createElement('div'), { className: 'hdr' }));
+for (let c = 0; c < N; c++) {
+  const h = document.createElement('div'); h.className = 'hdr'; h.textContent = c; matrix.appendChild(h);
+}
+for (let r = 0; r < N; r++) {
+  const rh = document.createElement('div'); rh.className = 'hdr'; rh.textContent = r; matrix.appendChild(rh);
+  for (let c = 0; c < N; c++) {
+    const idx = r * N + c;
+    const cell = document.createElement('div'); cell.className = 'm-cell';
+    cell.style.background = matrixColor(r, c);
+    cell.textContent = idx;
+    matrix.appendChild(cell);
+  }
+}
+
+// Build GPU flat memory strips
+// GPU 0 gets cols 0-1, GPU 1 gets cols 2-3
+// Row-major within each shard
+function buildGpuStrip(stripEl, addrsEl, gpuId, colStart) {
+  let addr = 0;
+  for (let r = 0; r < N; r++) {
+    for (let ci = 0; ci < 2; ci++) {
+      const c = colStart + ci;
+      const idx = r * N + c;
+      const mc = document.createElement('div'); mc.className = 'mem-cell';
+      mc.style.background = gpuColor(gpuId, addr, 8);
+      mc.textContent = idx;
+      stripEl.appendChild(mc);
+
+      const a = document.createElement('div'); a.className = 'mem-addr';
+      a.textContent = `addr ${addr}`;
+      addrsEl.appendChild(a);
+      addr++;
+    }
+  }
+}
+buildGpuStrip(document.getElementById('gpu0strip'), document.getElementById('gpu0addrs'), 0, 0);
+buildGpuStrip(document.getElementById('gpu1strip'), document.getElementById('gpu1addrs'), 1, 2);
+</script>
+
+
+</body></html>

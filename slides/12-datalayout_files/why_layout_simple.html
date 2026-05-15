@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<!-- saved from url=(0087)file:///D:/Courses/CMU_15442_26Spring/slides/12-datalayout_files/why_layout_simple.html -->
+<html lang="en" data-immersive-translate-page-theme="light"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+
+<title>Data Layout: Matrix to Memory</title>
+<link rel="stylesheet" href="file:///D:/Courses/CMU_15442_26Spring/slides/12-datalayout_files/viz-base.css">
+<script src="file:///D:/Courses/CMU_15442_26Spring/slides/12-datalayout_files/viz-base.js.%E4%B8%8B%E8%BD%BD"></script>
+<style>
+  .wrap {
+    display: flex; align-items: center; justify-content: flex-start; gap: 48px;
+    max-width: 1400px; margin: 30px 0 0; padding: 0 24px 0 100px;
+  }
+  .label { font-size: 15px; font-weight: 700; color: var(--text); text-align: center; margin-bottom: 10px; }
+
+  /* Matrix */
+  .matrix-grid {
+    display: grid;
+    grid-template-columns: 24px repeat(4, 56px);
+    grid-template-rows: 24px repeat(4, 56px);
+    gap: 3px;
+  }
+  .hdr { font-size: 10px; color: var(--dim); font-weight: 600; display: flex; align-items: center; justify-content: center;
+    font-family: 'SF Mono','Fira Code', monospace; }
+  .m-cell {
+    border-radius: 5px; display: flex; align-items: center; justify-content: center;
+    font-size: 14px; font-weight: 700; font-family: 'SF Mono','Fira Code', monospace;
+    color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.2);
+  }
+
+  /* Arrow */
+  .arrow { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .arrow-label { font-size: 12px; color: var(--dim); font-family: 'SF Mono','Fira Code', monospace; font-weight: 600; }
+
+  /* Flat memory strip - horizontal */
+  .mem-strip { display: flex; gap: 2px; }
+  .mem-cell {
+    width: 40px; height: 40px; border-radius: 5px; display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 700; font-family: 'SF Mono','Fira Code', monospace;
+    color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.2);
+  }
+  .mem-addrs { display: flex; gap: 2px; margin-top: 2px; }
+  .mem-addr { width: 40px; text-align: center; font-size: 8px; color: var(--dim);
+    font-family: 'SF Mono','Fira Code', monospace; }
+</style>
+</head>
+<body class="figure notitle">
+
+<h1>Data Layout</h1>
+<div class="sub">Logical index → physical address</div>
+
+<div class="wrap">
+  <div>
+    <div class="label">A[i, j]</div>
+    <div class="matrix-grid" id="matrix"><div class="hdr"></div><div class="hdr">0</div><div class="hdr">1</div><div class="hdr">2</div><div class="hdr">3</div><div class="hdr">0</div><div class="m-cell" style="background: rgb(176, 199, 232);">0</div><div class="m-cell" style="background: rgb(163, 190, 229);">1</div><div class="m-cell" style="background: rgb(149, 181, 227);">2</div><div class="m-cell" style="background: rgb(135, 172, 224);">3</div><div class="hdr">1</div><div class="m-cell" style="background: rgb(121, 163, 222);">4</div><div class="m-cell" style="background: rgb(107, 154, 220);">5</div><div class="m-cell" style="background: rgb(92, 145, 218);">6</div><div class="m-cell" style="background: rgb(77, 135, 216);">7</div><div class="hdr">2</div><div class="m-cell" style="background: rgb(62, 126, 215);">8</div><div class="m-cell" style="background: rgb(47, 117, 214);">9</div><div class="m-cell" style="background: rgb(39, 108, 206);">10</div><div class="m-cell" style="background: rgb(35, 101, 194);">11</div><div class="hdr">3</div><div class="m-cell" style="background: rgb(31, 94, 181);">12</div><div class="m-cell" style="background: rgb(27, 86, 169);">13</div><div class="m-cell" style="background: rgb(24, 79, 156);">14</div><div class="m-cell" style="background: rgb(20, 71, 143);">15</div><div class="hdr"></div><div class="hdr">0</div><div class="hdr">1</div><div class="hdr">2</div><div class="hdr">3</div><div class="hdr">0</div><div class="m-cell" style="background: rgb(176, 199, 232);">0</div><div class="m-cell" style="background: rgb(163, 190, 229);">1</div><div class="m-cell" style="background: rgb(149, 181, 227);">2</div><div class="m-cell" style="background: rgb(135, 172, 224);">3</div><div class="hdr">1</div><div class="m-cell" style="background: rgb(121, 163, 222);">4</div><div class="m-cell" style="background: rgb(107, 154, 220);">5</div><div class="m-cell" style="background: rgb(92, 145, 218);">6</div><div class="m-cell" style="background: rgb(77, 135, 216);">7</div><div class="hdr">2</div><div class="m-cell" style="background: rgb(62, 126, 215);">8</div><div class="m-cell" style="background: rgb(47, 117, 214);">9</div><div class="m-cell" style="background: rgb(39, 108, 206);">10</div><div class="m-cell" style="background: rgb(35, 101, 194);">11</div><div class="hdr">3</div><div class="m-cell" style="background: rgb(31, 94, 181);">12</div><div class="m-cell" style="background: rgb(27, 86, 169);">13</div><div class="m-cell" style="background: rgb(24, 79, 156);">14</div><div class="m-cell" style="background: rgb(20, 71, 143);">15</div></div>
+  </div>
+
+  <div class="arrow">
+    <svg width="60" height="32" viewBox="0 0 60 32">
+      <path d="M4 16h44M42 10l8 6-8 6" stroke="#888" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"></path>
+    </svg>
+  </div>
+
+  <div>
+    <div class="label">1D Memory</div>
+    <div class="mem-strip" id="memstrip"><div class="mem-cell" style="background: rgb(176, 199, 232);">0</div><div class="mem-cell" style="background: rgb(163, 190, 229);">1</div><div class="mem-cell" style="background: rgb(149, 181, 227);">2</div><div class="mem-cell" style="background: rgb(135, 172, 224);">3</div><div class="mem-cell" style="background: rgb(121, 163, 222);">4</div><div class="mem-cell" style="background: rgb(107, 154, 220);">5</div><div class="mem-cell" style="background: rgb(92, 145, 218);">6</div><div class="mem-cell" style="background: rgb(77, 135, 216);">7</div><div class="mem-cell" style="background: rgb(62, 126, 215);">8</div><div class="mem-cell" style="background: rgb(47, 117, 214);">9</div><div class="mem-cell" style="background: rgb(39, 108, 206);">10</div><div class="mem-cell" style="background: rgb(35, 101, 194);">11</div><div class="mem-cell" style="background: rgb(31, 94, 181);">12</div><div class="mem-cell" style="background: rgb(27, 86, 169);">13</div><div class="mem-cell" style="background: rgb(24, 79, 156);">14</div><div class="mem-cell" style="background: rgb(20, 71, 143);">15</div><div class="mem-cell" style="background: rgb(176, 199, 232);">0</div><div class="mem-cell" style="background: rgb(163, 190, 229);">1</div><div class="mem-cell" style="background: rgb(149, 181, 227);">2</div><div class="mem-cell" style="background: rgb(135, 172, 224);">3</div><div class="mem-cell" style="background: rgb(121, 163, 222);">4</div><div class="mem-cell" style="background: rgb(107, 154, 220);">5</div><div class="mem-cell" style="background: rgb(92, 145, 218);">6</div><div class="mem-cell" style="background: rgb(77, 135, 216);">7</div><div class="mem-cell" style="background: rgb(62, 126, 215);">8</div><div class="mem-cell" style="background: rgb(47, 117, 214);">9</div><div class="mem-cell" style="background: rgb(39, 108, 206);">10</div><div class="mem-cell" style="background: rgb(35, 101, 194);">11</div><div class="mem-cell" style="background: rgb(31, 94, 181);">12</div><div class="mem-cell" style="background: rgb(27, 86, 169);">13</div><div class="mem-cell" style="background: rgb(24, 79, 156);">14</div><div class="mem-cell" style="background: rgb(20, 71, 143);">15</div></div>
+    <div class="mem-addrs" id="memaddrs"><div class="mem-addr">addr 0</div><div class="mem-addr">addr 1</div><div class="mem-addr">addr 2</div><div class="mem-addr">addr 3</div><div class="mem-addr">addr 4</div><div class="mem-addr">addr 5</div><div class="mem-addr">addr 6</div><div class="mem-addr">addr 7</div><div class="mem-addr">addr 8</div><div class="mem-addr">addr 9</div><div class="mem-addr">addr 10</div><div class="mem-addr">addr 11</div><div class="mem-addr">addr 12</div><div class="mem-addr">addr 13</div><div class="mem-addr">addr 14</div><div class="mem-addr">addr 15</div><div class="mem-addr">addr 0</div><div class="mem-addr">addr 1</div><div class="mem-addr">addr 2</div><div class="mem-addr">addr 3</div><div class="mem-addr">addr 4</div><div class="mem-addr">addr 5</div><div class="mem-addr">addr 6</div><div class="mem-addr">addr 7</div><div class="mem-addr">addr 8</div><div class="mem-addr">addr 9</div><div class="mem-addr">addr 10</div><div class="mem-addr">addr 11</div><div class="mem-addr">addr 12</div><div class="mem-addr">addr 13</div><div class="mem-addr">addr 14</div><div class="mem-addr">addr 15</div></div>
+  </div>
+</div>
+
+<script>
+const N = 4, TOTAL = N * N;
+function cellColor(idx) {
+  const t = idx / (TOTAL - 1);
+  return `hsl(215, ${55 + t * 20}%, ${80 - t * 48}%)`;
+}
+
+// Matrix - cells show flat index
+const matrix = document.getElementById('matrix');
+matrix.appendChild(Object.assign(document.createElement('div'), { className: 'hdr' }));
+for (let c = 0; c < N; c++) {
+  const h = document.createElement('div'); h.className = 'hdr'; h.textContent = c; matrix.appendChild(h);
+}
+for (let r = 0; r < N; r++) {
+  const rh = document.createElement('div'); rh.className = 'hdr'; rh.textContent = r; matrix.appendChild(rh);
+  for (let c = 0; c < N; c++) {
+    const idx = r * N + c;
+    const cell = document.createElement('div'); cell.className = 'm-cell';
+    cell.style.background = cellColor(idx);
+    cell.textContent = idx;
+    matrix.appendChild(cell);
+  }
+}
+
+// Memory strip - same value, same color
+const strip = document.getElementById('memstrip');
+const addrs = document.getElementById('memaddrs');
+for (let i = 0; i < TOTAL; i++) {
+  const mc = document.createElement('div'); mc.className = 'mem-cell';
+  mc.style.background = cellColor(i);
+  mc.textContent = i;
+  strip.appendChild(mc);
+
+  const a = document.createElement('div'); a.className = 'mem-addr';
+  a.textContent = `addr ${i}`;
+  addrs.appendChild(a);
+}
+</script>
+
+
+</body></html>

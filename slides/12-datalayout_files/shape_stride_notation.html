@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<!-- saved from url=(0091)file:///D:/Courses/CMU_15442_26Spring/slides/12-datalayout_files/shape_stride_notation.html -->
+<html lang="en" data-immersive-translate-page-theme="light"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+
+<title>Shape–Stride Notation</title>
+<link rel="stylesheet" href="file:///D:/Courses/CMU_15442_26Spring/slides/12-datalayout_files/viz-base.css">
+<script src="file:///D:/Courses/CMU_15442_26Spring/slides/12-datalayout_files/viz-base.js.%E4%B8%8B%E8%BD%BD"></script>
+<style>
+  .wrap {
+    display: flex; flex-direction: column; align-items: center;
+    max-width: 1200px; margin: 20px auto 0; padding: 0 24px;
+  }
+
+  /* Notation display with annotations */
+  .nota-box { position: relative; margin-bottom: 50px; }
+  .notation {
+    font-family: 'SF Mono','Fira Code', monospace;
+    font-size: 28px; font-weight: 700; color: var(--text);
+    display: inline-flex; align-items: center;
+  }
+  .nota-plain { color: var(--text); }
+  .nota-shape { color: #3b82f6; }
+  .nota-stride { color: #e85d04; }
+
+  /* Annotation brackets drawn by JS */
+  .annot {
+    position: absolute; text-align: center;
+    font-family: 'SF Mono','Fira Code', monospace;
+    font-size: 13px; font-weight: 700;
+  }
+  .annot .bracket {
+    display: block; margin: 0 2px;
+    border-left: 2px solid; border-right: 2px solid; border-bottom: 2px solid;
+    border-radius: 0 0 4px 4px; height: 10px;
+  }
+  .annot .alabel { display: block; margin-top: 3px; }
+  .annot-shape .bracket { border-color: #3b82f6; }
+  .annot-shape .alabel { color: #3b82f6; }
+  .annot-stride .bracket { border-color: #e85d04; }
+  .annot-stride .alabel { color: #e85d04; }
+
+  /* Content area: grid + formula side by side */
+  .content {
+    display: flex; align-items: flex-start; gap: 60px;
+    justify-content: center;
+  }
+
+  /* Grid */
+  .grid { gap: 3px; justify-content: center; }
+  .cell {
+    width: 52px; height: 52px; aspect-ratio: auto;
+    border-radius: 5px; font-size: 13px; cursor: default;
+    font-family: 'SF Mono','Fira Code', monospace; font-weight: 700;
+    color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.2);
+    border-width: 2px;
+  }
+  .hdr { font-size: 10px; }
+  .rl { font-size: 10px; }
+
+  /* Formula */
+  .formula {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 18px 24px;
+    box-shadow: 0 1px 3px rgba(0,0,0,.06);
+    font-family: 'SF Mono','Fira Code', monospace;
+    line-height: 2.2;
+  }
+  .formula .f-title {
+    font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 8px;
+  }
+  .formula .f-line { font-size: 15px; font-weight: 600; }
+  .f-plain { color: var(--text); }
+  .f-shape { color: #3b82f6; }
+  .f-stride { color: #e85d04; }
+  .f-result { color: var(--accent); }
+</style>
+</head>
+<body class="figure notitle">
+
+<h1>Shape–Stride Notation</h1>
+<div class="sub">S[(shape) : (stride)]</div>
+
+<div class="wrap">
+  <!-- Notation with annotations -->
+  <div class="nota-box" id="nota-box">
+    <div class="notation">
+      <span class="nota-plain">S[(</span><span class="nota-shape" id="ns">4, 4</span><span class="nota-plain">) : (</span><span class="nota-stride" id="nt">4, 1</span><span class="nota-plain">)]</span>
+    </div>
+  <div class="annot annot-shape" style="left: 51.6937px; width: 68.925px; top: 36.8px;"><span class="bracket"></span><span class="alabel">shape</span></div><div class="annot annot-stride" style="left: 206.775px; width: 68.925px; top: 36.8px;"><span class="bracket"></span><span class="alabel">stride</span></div></div>
+
+  <!-- Grid + Formula -->
+  <div class="content">
+    <div>
+      <div class="grid" id="grid" style="grid-template-columns: 20px repeat(4, 52px);"><div class="hdr"></div><div class="hdr">j=0</div><div class="hdr">j=1</div><div class="hdr">j=2</div><div class="hdr">j=3</div><div class="rl">i=0</div><div class="cell" style="background: rgb(168, 194, 230);">0</div><div class="cell" style="background: rgb(156, 186, 227);">1</div><div class="cell" style="background: rgb(144, 178, 225);">2</div><div class="cell" style="background: rgb(132, 170, 223);">3</div><div class="rl">i=1</div><div class="cell" style="background: rgb(119, 162, 221);">4</div><div class="cell" style="background: rgb(107, 154, 220);">5</div><div class="cell" style="background: rgb(94, 146, 218);">6</div><div class="cell" style="background: rgb(81, 138, 217);">7</div><div class="rl">i=2</div><div class="cell" style="background: rgb(67, 129, 216);">8</div><div class="cell" style="background: rgb(54, 121, 215);">9</div><div class="cell" style="background: rgb(40, 113, 215);">10</div><div class="cell" style="background: rgb(37, 106, 204); border-color: rgb(232, 93, 4); border-width: 3px; box-shadow: rgba(232, 93, 4, 0.4) 0px 0px 8px;">11</div><div class="rl">i=3</div><div class="cell" style="background: rgb(33, 100, 194);">12</div><div class="cell" style="background: rgb(29, 93, 183);">13</div><div class="cell" style="background: rgb(26, 87, 172);">14</div><div class="cell" style="background: rgb(23, 80, 161);">15</div><div class="hdr"></div><div class="hdr">j=0</div><div class="hdr">j=1</div><div class="hdr">j=2</div><div class="hdr">j=3</div><div class="rl">i=0</div><div class="cell" style="background: rgb(168, 194, 230);">0</div><div class="cell" style="background: rgb(156, 186, 227);">1</div><div class="cell" style="background: rgb(144, 178, 225);">2</div><div class="cell" style="background: rgb(132, 170, 223);">3</div><div class="rl">i=1</div><div class="cell" style="background: rgb(119, 162, 221);">4</div><div class="cell" style="background: rgb(107, 154, 220);">5</div><div class="cell" style="background: rgb(94, 146, 218);">6</div><div class="cell" style="background: rgb(81, 138, 217);">7</div><div class="rl">i=2</div><div class="cell" style="background: rgb(67, 129, 216);">8</div><div class="cell" style="background: rgb(54, 121, 215);">9</div><div class="cell" style="background: rgb(40, 113, 215);">10</div><div class="cell" style="background: rgb(37, 106, 204); border-color: rgb(232, 93, 4); border-width: 3px; box-shadow: rgba(232, 93, 4, 0.4) 0px 0px 8px;">11</div><div class="rl">i=3</div><div class="cell" style="background: rgb(33, 100, 194);">12</div><div class="cell" style="background: rgb(29, 93, 183);">13</div><div class="cell" style="background: rgb(26, 87, 172);">14</div><div class="cell" style="background: rgb(23, 80, 161);">15</div></div>
+    </div>
+    <div class="formula">
+      <div class="f-title">Address computation</div>
+      <div class="f-line">
+        <span class="f-plain">addr(i, j) = i × </span><span class="f-stride">4</span><span class="f-plain"> + j × </span><span class="f-stride">1</span>
+      </div>
+      <div class="f-line" style="margin-top: 12px; font-size: 13px; color: var(--dim);">
+        Example: addr(<span class="f-shape">2</span>, <span class="f-shape">3</span>) = <span class="f-shape">2</span>×<span class="f-stride">4</span> + <span class="f-shape">3</span>×<span class="f-stride">1</span> = <span class="f-result">11</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const N = 4, TOTAL = N * N;
+
+function cellColor(idx) {
+  const t = idx / (TOTAL - 1);
+  return `hsl(215, ${55 + t * 20}%, ${78 - t * 42}%)`;
+}
+
+const grid = document.getElementById('grid');
+grid.style.gridTemplateColumns = '20px repeat(' + N + ', 52px)';
+
+grid.appendChild(Object.assign(document.createElement('div'), { className: 'hdr' }));
+for (let c = 0; c < N; c++) {
+  const h = document.createElement('div'); h.className = 'hdr';
+  h.textContent = 'j=' + c; grid.appendChild(h);
+}
+for (let r = 0; r < N; r++) {
+  const rl = document.createElement('div'); rl.className = 'rl';
+  rl.textContent = 'i=' + r; grid.appendChild(rl);
+  for (let c = 0; c < N; c++) {
+    const idx = r * N + c;
+    const cell = document.createElement('div'); cell.className = 'cell';
+    cell.style.background = cellColor(idx);
+    cell.textContent = idx;
+    if (r === 2 && c === 3) {
+      cell.style.borderColor = '#e85d04';
+      cell.style.borderWidth = '3px';
+      cell.style.boxShadow = '0 0 8px rgba(232,93,4,.4)';
+    }
+    grid.appendChild(cell);
+  }
+}
+
+// Position annotation brackets under the actual shape/stride spans
+function positionAnnotations() {
+  var box = document.getElementById('nota-box');
+  var boxR = box.getBoundingClientRect();
+  var ns = document.getElementById('ns');
+  var nt = document.getElementById('nt');
+  var nsR = ns.getBoundingClientRect();
+  var ntR = nt.getBoundingClientRect();
+
+  // Remove old annotations
+  box.querySelectorAll('.annot').forEach(function(el) { el.remove(); });
+
+  // Shape annotation
+  var a1 = document.createElement('div');
+  a1.className = 'annot annot-shape';
+  a1.style.left = (nsR.left - boxR.left) + 'px';
+  a1.style.width = nsR.width + 'px';
+  a1.style.top = (nsR.bottom - boxR.top + 2) + 'px';
+  a1.innerHTML = '<span class="bracket"></span><span class="alabel">shape</span>';
+  box.appendChild(a1);
+
+  // Stride annotation
+  var a2 = document.createElement('div');
+  a2.className = 'annot annot-stride';
+  a2.style.left = (ntR.left - boxR.left) + 'px';
+  a2.style.width = ntR.width + 'px';
+  a2.style.top = (ntR.bottom - boxR.top + 2) + 'px';
+  a2.innerHTML = '<span class="bracket"></span><span class="alabel">stride</span>';
+  box.appendChild(a2);
+}
+
+window.addEventListener('load', positionAnnotations);
+window.addEventListener('resize', positionAnnotations);
+</script>
+
+
+</body></html>
