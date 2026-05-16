@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<!-- saved from url=(0076)https://mlsyscourse.org/slides/modern-gpu-gemm/demo/gemm_endtoend.html?embed -->
+<html lang="en" data-immersive-translate-page-theme="light"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+
+<title>End-to-End GEMM</title>
+<link rel="stylesheet" href="./viz-base.css">
+<script src="./viz-base.js.下载"></script>
+<style>
+  .main { display:flex; gap:12px; max-width:1200px; margin:0 auto; justify-content:center; align-items:center; }
+  .mat-box { background:var(--surface); border-radius:10px; padding:10px 12px; border:1px solid var(--border);
+    box-shadow:0 1px 3px rgba(0,0,0,.06); text-align:center; }
+  .mat-box h2 { font-size:13px; font-weight:700; margin-bottom:2px; }
+  .mat-box .dims { font-size:10px; color:var(--dim); margin-bottom:6px; font-weight:600; }
+
+  .grid { display:inline-grid; gap:1px; }
+  .cell {
+    border-radius:2px; display:flex; align-items:center; justify-content:center;
+    font-size:7px; font-weight:700; border:2px solid transparent; transition:all .15s;
+    min-width:0; color:#fff; text-shadow:0 1px 1px rgba(0,0,0,.2);
+  }
+  .cell.active { border-color:#222; border-width:2px; z-index:1; }
+  .cell.dim { background:#dde0e4 !important; color:#aaa !important; text-shadow:none !important; }
+
+  .arrow { font-size:16px; display:flex; align-items:center; justify-content:center; color:var(--dim);
+    font-weight:700; padding:0 2px; align-self:center; flex-direction:column; gap:1px; }
+  .arrow .albl { font-size:9px; font-weight:700; color:var(--accent); }
+  .op { font-size:18px; display:flex; align-items:center; justify-content:center; color:var(--dim);
+    font-weight:700; padding:0 4px; align-self:center; }
+  .eq { font-size:16px; display:flex; align-items:center; justify-content:center; color:var(--dim);
+    font-weight:700; padding:0 4px; align-self:center; }
+
+  .formula-box { max-width:1200px; margin:8px auto 0; background:var(--surface); border:1px solid var(--border);
+    border-radius:8px; padding:8px 14px; text-align:center; font-size:12px; line-height:1.5; }
+  .formula-box .formula { font-family:'SF Mono','Fira Code',monospace; color:var(--accent); font-weight:600; }
+
+  .info { max-width:1200px; margin:6px auto 0; text-align:center; font-size:12px; color:var(--dim); font-weight:600; }
+
+  .anim-bar { max-width:1200px; margin:8px auto 0; display:flex; gap:8px; justify-content:center; align-items:center; }
+  .anim-bar .lbl { font-size:12px; color:var(--dim); font-weight:600; }
+  .kb { width:36px; height:28px; border:1px solid var(--border); background:var(--surface); color:var(--text);
+    cursor:pointer; border-radius:4px; font-size:14px; font-family:inherit; display:flex; align-items:center;
+    justify-content:center; transition:all .12s; font-weight:600; }
+  .kb:hover { background:#eef0f4; }
+
+  .leg { gap:0; margin-top:6px; }
+</style>
+<style data-id="immersive-translate-input-injected-css"></style></head>
+<body>
+
+<h1>End-to-End GEMM: TMA + TensorCore</h1>
+<div class="sub">Data path: TMA loads tiles into shared memory, TensorCore reads for compute</div>
+
+<div class="main">
+  <div class="mat-box">
+    <h2 style="color:var(--color-group-0)">A <small style="font-weight:600;color:var(--dim)">(global memory)</small></h2>
+    <div class="dims" id="agd">256×256 (N×K)</div>
+    <div class="grid" id="gag" style="grid-template-columns: repeat(16, 10px);"><div class="cell" style="width: 10px; height: 10px; background: rgb(91, 155, 213);"></div><div class="cell" style="width: 10px; height: 10px; background: rgb(91, 155, 213);"></div><div class="cell" style="width: 10px; height: 10px; background: rgb(91, 155, 213);"></div><div class="cell" style="width: 10px; height: 10px; background: rgb(91, 155, 213);"></div><div class="cell" style="width: 10px; height: 10px; background: rgb(91, 155, 213);"></div><div class="cell" style="width: 10px; height: 10px; background: rgb(91, 155, 213);"></div><div class="cell" style="width: 10px; height: 10px; background: rgb(91, 155, 213);"></div><div class="cell" style="width: 10px; height: 10px; background: rgb(91, 155, 213);"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell" style="width: 10px; height: 10px; background: rgb(91, 155, 213);"></div><div class="cell" style="width: 10px; height: 10px; background: rgb(91, 155, 213);"></div><div class="cell" style="width: 10px; height: 10px; background: rgb(91, 155, 213);"></div><div class="cell" style="width: 10px; height: 10px; background: rgb(91, 155, 213);"></div><div class="cell" style="width: 10px; height: 10px; background: rgb(91, 155, 213);"></div><div class="cell" style="width: 10px; height: 10px; background: rgb(91, 155, 213);"></div><div class="cell" style="width: 10px; height: 10px; background: rgb(91, 155, 213);"></div><div class="cell" style="width: 10px; height: 10px; background: rgb(91, 155, 213);"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell" style="width: 10px; height: 10px; background: rgb(91, 155, 213);"></div><div class="cell" style="width: 10px; height: 10px; background: rgb(91, 155, 213);"></div><div class="cell" style="width: 10px; height: 10px; background: rgb(91, 155, 213);"></div><div class="cell" style="width: 10px; height: 10px; background: rgb(91, 155, 213);"></div><div class="cell" style="width: 10px; height: 10px; background: rgb(91, 155, 213);"></div><div class="cell" style="width: 10px; height: 10px; background: rgb(91, 155, 213);"></div><div class="cell" style="width: 10px; height: 10px; background: rgb(91, 155, 213);"></div><div class="cell" style="width: 10px; height: 10px; background: rgb(91, 155, 213);"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell" style="width: 10px; height: 10px; background: rgb(91, 155, 213);"></div><div class="cell" style="width: 10px; height: 10px; background: rgb(91, 155, 213);"></div><div class="cell" style="width: 10px; height: 10px; background: rgb(91, 155, 213);"></div><div class="cell" style="width: 10px; height: 10px; background: rgb(91, 155, 213);"></div><div class="cell" style="width: 10px; height: 10px; background: rgb(91, 155, 213);"></div><div class="cell" style="width: 10px; height: 10px; background: rgb(91, 155, 213);"></div><div class="cell" style="width: 10px; height: 10px; background: rgb(91, 155, 213);"></div><div class="cell" style="width: 10px; height: 10px; background: rgb(91, 155, 213);"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell" style="width: 10px; height: 10px; background: rgb(91, 155, 213);"></div><div class="cell" style="width: 10px; height: 10px; background: rgb(91, 155, 213);"></div><div class="cell" style="width: 10px; height: 10px; background: rgb(91, 155, 213);"></div><div class="cell" style="width: 10px; height: 10px; background: rgb(91, 155, 213);"></div><div class="cell" style="width: 10px; height: 10px; background: rgb(91, 155, 213);"></div><div class="cell" style="width: 10px; height: 10px; background: rgb(91, 155, 213);"></div><div class="cell" style="width: 10px; height: 10px; background: rgb(91, 155, 213);"></div><div class="cell" style="width: 10px; height: 10px; background: rgb(91, 155, 213);"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell" style="width: 10px; height: 10px; background: rgb(91, 155, 213);"></div><div class="cell" style="width: 10px; height: 10px; background: rgb(91, 155, 213);"></div><div class="cell" style="width: 10px; height: 10px; background: rgb(91, 155, 213);"></div><div class="cell" style="width: 10px; height: 10px; background: rgb(91, 155, 213);"></div><div class="cell" style="width: 10px; height: 10px; background: rgb(91, 155, 213);"></div><div class="cell" style="width: 10px; height: 10px; background: rgb(91, 155, 213);"></div><div class="cell" style="width: 10px; height: 10px; background: rgb(91, 155, 213);"></div><div class="cell" style="width: 10px; height: 10px; background: rgb(91, 155, 213);"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell" style="width: 10px; height: 10px; background: rgb(91, 155, 213);"></div><div class="cell" style="width: 10px; height: 10px; background: rgb(91, 155, 213);"></div><div class="cell" style="width: 10px; height: 10px; background: rgb(91, 155, 213);"></div><div class="cell" style="width: 10px; height: 10px; background: rgb(91, 155, 213);"></div><div class="cell" style="width: 10px; height: 10px; background: rgb(91, 155, 213);"></div><div class="cell" style="width: 10px; height: 10px; background: rgb(91, 155, 213);"></div><div class="cell" style="width: 10px; height: 10px; background: rgb(91, 155, 213);"></div><div class="cell" style="width: 10px; height: 10px; background: rgb(91, 155, 213);"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell" style="width: 10px; height: 10px; background: rgb(91, 155, 213);"></div><div class="cell" style="width: 10px; height: 10px; background: rgb(91, 155, 213);"></div><div class="cell" style="width: 10px; height: 10px; background: rgb(91, 155, 213);"></div><div class="cell" style="width: 10px; height: 10px; background: rgb(91, 155, 213);"></div><div class="cell" style="width: 10px; height: 10px; background: rgb(91, 155, 213);"></div><div class="cell" style="width: 10px; height: 10px; background: rgb(91, 155, 213);"></div><div class="cell" style="width: 10px; height: 10px; background: rgb(91, 155, 213);"></div><div class="cell" style="width: 10px; height: 10px; background: rgb(91, 155, 213);"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div><div class="cell dim" style="width: 10px; height: 10px;"></div></div>
+  </div>
+  <div class="arrow">
+    <span class="albl">TMA</span>
+    →
+  </div>
+  <div class="mat-box">
+    <h2 style="color:var(--color-group-0)">A <small style="font-weight:600;color:var(--dim)">(shared memory)</small></h2>
+    <div class="dims" id="asd">128×128 smem tile</div>
+    <div class="grid" id="gas" style="grid-template-columns: repeat(8, 16px);"><div class="cell active" style="width: 16px; height: 16px; background: rgb(91, 155, 213);"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(91, 155, 213); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(91, 155, 213); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(91, 155, 213); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(91, 155, 213); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(91, 155, 213); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(91, 155, 213); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(91, 155, 213); opacity: 0.6;"></div><div class="cell active" style="width: 16px; height: 16px; background: rgb(91, 155, 213);"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(91, 155, 213); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(91, 155, 213); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(91, 155, 213); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(91, 155, 213); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(91, 155, 213); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(91, 155, 213); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(91, 155, 213); opacity: 0.6;"></div><div class="cell active" style="width: 16px; height: 16px; background: rgb(91, 155, 213);"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(91, 155, 213); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(91, 155, 213); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(91, 155, 213); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(91, 155, 213); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(91, 155, 213); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(91, 155, 213); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(91, 155, 213); opacity: 0.6;"></div><div class="cell active" style="width: 16px; height: 16px; background: rgb(91, 155, 213);"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(91, 155, 213); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(91, 155, 213); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(91, 155, 213); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(91, 155, 213); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(91, 155, 213); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(91, 155, 213); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(91, 155, 213); opacity: 0.6;"></div><div class="cell active" style="width: 16px; height: 16px; background: rgb(91, 155, 213);"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(91, 155, 213); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(91, 155, 213); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(91, 155, 213); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(91, 155, 213); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(91, 155, 213); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(91, 155, 213); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(91, 155, 213); opacity: 0.6;"></div><div class="cell active" style="width: 16px; height: 16px; background: rgb(91, 155, 213);"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(91, 155, 213); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(91, 155, 213); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(91, 155, 213); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(91, 155, 213); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(91, 155, 213); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(91, 155, 213); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(91, 155, 213); opacity: 0.6;"></div><div class="cell active" style="width: 16px; height: 16px; background: rgb(91, 155, 213);"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(91, 155, 213); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(91, 155, 213); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(91, 155, 213); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(91, 155, 213); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(91, 155, 213); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(91, 155, 213); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(91, 155, 213); opacity: 0.6;"></div><div class="cell active" style="width: 16px; height: 16px; background: rgb(91, 155, 213);"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(91, 155, 213); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(91, 155, 213); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(91, 155, 213); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(91, 155, 213); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(91, 155, 213); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(91, 155, 213); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(91, 155, 213); opacity: 0.6;"></div></div>
+  </div>
+  <div class="op">×</div>
+  <div class="mat-box">
+    <h2 style="color:var(--color-group-1)">B <small style="font-weight:600;color:var(--dim)">(shared memory)</small></h2>
+    <div class="dims" id="bsd">128×128 smem tile</div>
+    <div class="grid" id="gbs" style="grid-template-columns: repeat(8, 16px);"><div class="cell active" style="width: 16px; height: 16px; background: rgb(237, 154, 60);"></div><div class="cell active" style="width: 16px; height: 16px; background: rgb(237, 154, 60);"></div><div class="cell active" style="width: 16px; height: 16px; background: rgb(237, 154, 60);"></div><div class="cell active" style="width: 16px; height: 16px; background: rgb(237, 154, 60);"></div><div class="cell active" style="width: 16px; height: 16px; background: rgb(237, 154, 60);"></div><div class="cell active" style="width: 16px; height: 16px; background: rgb(237, 154, 60);"></div><div class="cell active" style="width: 16px; height: 16px; background: rgb(237, 154, 60);"></div><div class="cell active" style="width: 16px; height: 16px; background: rgb(237, 154, 60);"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(237, 154, 60); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(237, 154, 60); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(237, 154, 60); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(237, 154, 60); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(237, 154, 60); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(237, 154, 60); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(237, 154, 60); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(237, 154, 60); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(237, 154, 60); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(237, 154, 60); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(237, 154, 60); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(237, 154, 60); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(237, 154, 60); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(237, 154, 60); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(237, 154, 60); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(237, 154, 60); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(237, 154, 60); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(237, 154, 60); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(237, 154, 60); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(237, 154, 60); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(237, 154, 60); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(237, 154, 60); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(237, 154, 60); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(237, 154, 60); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(237, 154, 60); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(237, 154, 60); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(237, 154, 60); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(237, 154, 60); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(237, 154, 60); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(237, 154, 60); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(237, 154, 60); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(237, 154, 60); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(237, 154, 60); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(237, 154, 60); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(237, 154, 60); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(237, 154, 60); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(237, 154, 60); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(237, 154, 60); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(237, 154, 60); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(237, 154, 60); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(237, 154, 60); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(237, 154, 60); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(237, 154, 60); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(237, 154, 60); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(237, 154, 60); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(237, 154, 60); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(237, 154, 60); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(237, 154, 60); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(237, 154, 60); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(237, 154, 60); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(237, 154, 60); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(237, 154, 60); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(237, 154, 60); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(237, 154, 60); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(237, 154, 60); opacity: 0.6;"></div><div class="cell" style="width: 16px; height: 16px; background: rgb(237, 154, 60); opacity: 0.6;"></div></div>
+  </div>
+  <div class="arrow">
+    <span class="albl">TensorCore</span>
+    →
+  </div>
+  <div class="mat-box">
+    <h2 style="color:var(--color-group-4)">C</h2>
+    <div class="dims" id="cd">128×128 accum</div>
+    <div class="grid" id="gc" style="grid-template-columns: repeat(8, 8px);"><div class="cell" style="width: 8px; height: 8px; background: rgb(95, 184, 95);"></div><div class="cell" style="width: 8px; height: 8px; background: rgb(95, 184, 95);"></div><div class="cell" style="width: 8px; height: 8px; background: rgb(95, 184, 95);"></div><div class="cell" style="width: 8px; height: 8px; background: rgb(95, 184, 95);"></div><div class="cell" style="width: 8px; height: 8px; background: rgb(95, 184, 95);"></div><div class="cell" style="width: 8px; height: 8px; background: rgb(95, 184, 95);"></div><div class="cell" style="width: 8px; height: 8px; background: rgb(95, 184, 95);"></div><div class="cell" style="width: 8px; height: 8px; background: rgb(95, 184, 95);"></div><div class="cell" style="width: 8px; height: 8px; background: rgb(95, 184, 95);"></div><div class="cell" style="width: 8px; height: 8px; background: rgb(95, 184, 95);"></div><div class="cell" style="width: 8px; height: 8px; background: rgb(95, 184, 95);"></div><div class="cell" style="width: 8px; height: 8px; background: rgb(95, 184, 95);"></div><div class="cell" style="width: 8px; height: 8px; background: rgb(95, 184, 95);"></div><div class="cell" style="width: 8px; height: 8px; background: rgb(95, 184, 95);"></div><div class="cell" style="width: 8px; height: 8px; background: rgb(95, 184, 95);"></div><div class="cell" style="width: 8px; height: 8px; background: rgb(95, 184, 95);"></div><div class="cell" style="width: 8px; height: 8px; background: rgb(95, 184, 95);"></div><div class="cell" style="width: 8px; height: 8px; background: rgb(95, 184, 95);"></div><div class="cell" style="width: 8px; height: 8px; background: rgb(95, 184, 95);"></div><div class="cell" style="width: 8px; height: 8px; background: rgb(95, 184, 95);"></div><div class="cell" style="width: 8px; height: 8px; background: rgb(95, 184, 95);"></div><div class="cell" style="width: 8px; height: 8px; background: rgb(95, 184, 95);"></div><div class="cell" style="width: 8px; height: 8px; background: rgb(95, 184, 95);"></div><div class="cell" style="width: 8px; height: 8px; background: rgb(95, 184, 95);"></div><div class="cell" style="width: 8px; height: 8px; background: rgb(95, 184, 95);"></div><div class="cell" style="width: 8px; height: 8px; background: rgb(95, 184, 95);"></div><div class="cell" style="width: 8px; height: 8px; background: rgb(95, 184, 95);"></div><div class="cell" style="width: 8px; height: 8px; background: rgb(95, 184, 95);"></div><div class="cell" style="width: 8px; height: 8px; background: rgb(95, 184, 95);"></div><div class="cell" style="width: 8px; height: 8px; background: rgb(95, 184, 95);"></div><div class="cell" style="width: 8px; height: 8px; background: rgb(95, 184, 95);"></div><div class="cell" style="width: 8px; height: 8px; background: rgb(95, 184, 95);"></div><div class="cell" style="width: 8px; height: 8px; background: rgb(95, 184, 95);"></div><div class="cell" style="width: 8px; height: 8px; background: rgb(95, 184, 95);"></div><div class="cell" style="width: 8px; height: 8px; background: rgb(95, 184, 95);"></div><div class="cell" style="width: 8px; height: 8px; background: rgb(95, 184, 95);"></div><div class="cell" style="width: 8px; height: 8px; background: rgb(95, 184, 95);"></div><div class="cell" style="width: 8px; height: 8px; background: rgb(95, 184, 95);"></div><div class="cell" style="width: 8px; height: 8px; background: rgb(95, 184, 95);"></div><div class="cell" style="width: 8px; height: 8px; background: rgb(95, 184, 95);"></div><div class="cell" style="width: 8px; height: 8px; background: rgb(95, 184, 95);"></div><div class="cell" style="width: 8px; height: 8px; background: rgb(95, 184, 95);"></div><div class="cell" style="width: 8px; height: 8px; background: rgb(95, 184, 95);"></div><div class="cell" style="width: 8px; height: 8px; background: rgb(95, 184, 95);"></div><div class="cell" style="width: 8px; height: 8px; background: rgb(95, 184, 95);"></div><div class="cell" style="width: 8px; height: 8px; background: rgb(95, 184, 95);"></div><div class="cell" style="width: 8px; height: 8px; background: rgb(95, 184, 95);"></div><div class="cell" style="width: 8px; height: 8px; background: rgb(95, 184, 95);"></div><div class="cell" style="width: 8px; height: 8px; background: rgb(95, 184, 95);"></div><div class="cell" style="width: 8px; height: 8px; background: rgb(95, 184, 95);"></div><div class="cell" style="width: 8px; height: 8px; background: rgb(95, 184, 95);"></div><div class="cell" style="width: 8px; height: 8px; background: rgb(95, 184, 95);"></div><div class="cell" style="width: 8px; height: 8px; background: rgb(95, 184, 95);"></div><div class="cell" style="width: 8px; height: 8px; background: rgb(95, 184, 95);"></div><div class="cell" style="width: 8px; height: 8px; background: rgb(95, 184, 95);"></div><div class="cell" style="width: 8px; height: 8px; background: rgb(95, 184, 95);"></div><div class="cell" style="width: 8px; height: 8px; background: rgb(95, 184, 95);"></div><div class="cell" style="width: 8px; height: 8px; background: rgb(95, 184, 95);"></div><div class="cell" style="width: 8px; height: 8px; background: rgb(95, 184, 95);"></div><div class="cell" style="width: 8px; height: 8px; background: rgb(95, 184, 95);"></div><div class="cell" style="width: 8px; height: 8px; background: rgb(95, 184, 95);"></div><div class="cell" style="width: 8px; height: 8px; background: rgb(95, 184, 95);"></div><div class="cell" style="width: 8px; height: 8px; background: rgb(95, 184, 95);"></div><div class="cell" style="width: 8px; height: 8px; background: rgb(95, 184, 95);"></div></div>
+  </div>
+</div>
+
+<div class="anim-bar">
+  <button class="kb" id="playbtn" style="font-size:14px;width:36px;height:28px">▷</button>
+  <span class="lbl">N block</span>
+  <span class="bg" id="nb">
+    <button class="btn on" data-v="0">0</button>
+    <button class="btn" data-v="1">1</button>
+  </span>
+  <span class="lbl">Outer K</span>
+  <span class="bg" id="ok">
+    <button class="btn on" data-v="0">0</button>
+    <button class="btn" data-v="1">1</button>
+  </span>
+  <span class="lbl">Inner K</span>
+  <span class="bg" id="ik">
+    <button class="btn on" data-v="0">0</button>
+    <button class="btn" data-v="1">1</button>
+    <button class="btn" data-v="2">2</button>
+    <button class="btn" data-v="3">3</button>
+    <button class="btn" data-v="4">4</button>
+    <button class="btn" data-v="5">5</button>
+    <button class="btn" data-v="6">6</button>
+    <button class="btn" data-v="7">7</button>
+  </span>
+</div>
+
+<div class="formula-box" id="fbox"><span class="formula">MMA m128n128k16, accum=0</span> | C = A[n, k] × B[k, m]<br><b>TMA</b>: A[0:128, 0:128] → smem | <b>TensorCore</b>: K=0–15</div>
+<div class="info" id="inf">N block 0/2 | K step 0 of 16 (outer K=0, inner K=0)</div>
+
+<div class="leg">
+  <div class="leg-row" id="sl"><div class="li"><div class="swtch" style="background: rgb(91, 155, 213); opacity: 1; border: 2px solid rgb(34, 34, 34); box-sizing: border-box;"></div>TensorCore read (current)</div><div class="leg-sep"></div><div class="li"><div class="swtch" style="background: rgb(91, 155, 213); opacity: 0.6;"></div>In smem (waiting)</div><div class="leg-sep"></div><div class="li"><div class="swtch" style="background: rgb(91, 155, 213); opacity: 1;"></div>In gmem</div><div class="leg-sep"></div><div class="li"><div class="swtch" style="background: rgb(221, 224, 228); opacity: 1;"></div>Consumed</div></div>
+</div>
+<div style="max-width:1200px;margin:6px auto 0;text-align:center;font-size:11px;color:var(--dim);font-style:italic">
+  B loading path (global → shared memory) omitted for simplicity
+</div>
+
+<script>
+var BK = ['#5b9bd5','#ed9a3c','#d95555','#45b5a5','#5fb85f','#e0b828','#9d6eb5','#e87888'];
+// Problem size
+var N_TOTAL = 256, K_TOTAL = 256, M_TOTAL = 256, BLOCK = 16;
+// Shared memory tile = 128x128
+var SMEM = 128;
+var SMEM_B = SMEM / BLOCK;        // 8 blocks per smem dim
+// Global block counts
+var NB_G = N_TOTAL / BLOCK;       // 16
+var KB_G = K_TOTAL / BLOCK;       // 16
+var MB_G = M_TOTAL / BLOCK;       // 16
+// Tile counts
+var N_TILES = N_TOTAL / SMEM;     // 2
+var K_TILES = K_TOTAL / SMEM;     // 2
+var INNER_K = SMEM_B;             // 8 TensorCore steps per smem tile
+var TOTAL_K = K_TILES * INNER_K;  // 16 total K steps
+
+var SZG = 10;                     // Agmem cell size
+var SZS = 16;                     // smem cell size
+var CSZ = 8;                      // C cell size
+
+var ST = { nBlock: 0, outerK: 0, innerK: 0, playing: false, timer: null };
+
+function mk(t, c) { var d = document.createElement(t); if (c) d.className = c; return d; }
+
+function globalStep() {
+  return ST.nBlock * TOTAL_K + ST.outerK * INNER_K + ST.innerK;
+}
+
+function setGlobalStep(s) {
+  var totalPerN = TOTAL_K;
+  ST.nBlock = Math.floor(s / totalPerN);
+  var rem = s % totalPerN;
+  ST.outerK = Math.floor(rem / INNER_K);
+  ST.innerK = rem % INNER_K;
+}
+
+function syncButtons() {
+  document.querySelectorAll('#nb .btn').forEach(function(x) { x.classList.remove('on'); });
+  document.querySelectorAll('#nb .btn')[ST.nBlock].classList.add('on');
+  document.querySelectorAll('#ok .btn').forEach(function(x) { x.classList.remove('on'); });
+  document.querySelectorAll('#ok .btn')[ST.outerK].classList.add('on');
+  document.querySelectorAll('#ik .btn').forEach(function(x) { x.classList.remove('on'); });
+  document.querySelectorAll('#ik .btn')[ST.innerK].classList.add('on');
+}
+
+function draw() {
+  var absK = ST.outerK * INNER_K + ST.innerK;  // 0-15
+  // TMA tile range in K blocks (within global)
+  var kSmemStart = ST.outerK * SMEM_B;   // start K block of current smem tile
+  var kSmemEnd = kSmemStart + SMEM_B;     // end+1
+  var absKGlobal = kSmemStart + ST.innerK; // absolute K block in global
+  // N range in blocks
+  var nStart = ST.nBlock * SMEM_B;
+  var nEnd = nStart + SMEM_B;
+
+  // --- Agmem: NB_G x KB_G grid ---
+  document.getElementById('agd').textContent = N_TOTAL + '\u00d7' + K_TOTAL + ' (N\u00d7K)';
+
+  var gag = document.getElementById('gag'); gag.innerHTML = '';
+  gag.style.gridTemplateColumns = 'repeat(' + KB_G + ',' + SZG + 'px)';
+  for (var r = 0; r < NB_G; r++) {
+    for (var c = 0; c < KB_G; c++) {
+      var d = mk('div', 'cell');
+      d.style.width = SZG + 'px'; d.style.height = SZG + 'px';
+      var inN = r >= nStart && r < nEnd;
+      var inK = c >= kSmemStart && c < kSmemEnd;
+      if (inN && inK) {
+        d.style.background = BK[0];  // current TMA tile (= Asmem)
+      } else {
+        d.classList.add('dim');
+      }
+      gag.appendChild(d);
+    }
+  }
+
+  // --- Asmem: SMEM_B x SMEM_B grid (128x128 smem tile) ---
+  document.getElementById('asd').textContent = SMEM + '\u00d7' + SMEM + ' smem tile';
+
+  var gas = document.getElementById('gas'); gas.innerHTML = '';
+  gas.style.gridTemplateColumns = 'repeat(' + SMEM_B + ',' + SZS + 'px)';
+  for (var r = 0; r < SMEM_B; r++) {
+    for (var c = 0; c < SMEM_B; c++) {
+      var d = mk('div', 'cell');
+      d.style.width = SZS + 'px'; d.style.height = SZS + 'px';
+      if (c === ST.innerK) {
+        d.style.background = BK[0]; d.classList.add('active');
+      } else if (c < ST.innerK) {
+        d.style.background = BK[0]; d.style.opacity = '.35';
+      } else {
+        d.style.background = BK[0]; d.style.opacity = '.6';
+      }
+      gas.appendChild(d);
+    }
+  }
+
+  // --- Bsmem: SMEM_B x SMEM_B grid (128x128 smem tile) ---
+  document.getElementById('bsd').textContent = SMEM + '\u00d7' + SMEM + ' smem tile';
+
+  var gbs = document.getElementById('gbs'); gbs.innerHTML = '';
+  gbs.style.gridTemplateColumns = 'repeat(' + SMEM_B + ',' + SZS + 'px)';
+  for (var r = 0; r < SMEM_B; r++) {
+    for (var c = 0; c < SMEM_B; c++) {
+      var d = mk('div', 'cell');
+      d.style.width = SZS + 'px'; d.style.height = SZS + 'px';
+      if (r === ST.innerK) {
+        d.style.background = BK[1]; d.classList.add('active');
+      } else if (r < ST.innerK) {
+        d.style.background = BK[1]; d.style.opacity = '.35';
+      } else {
+        d.style.background = BK[1]; d.style.opacity = '.6';
+      }
+      gbs.appendChild(d);
+    }
+  }
+
+  // --- C: SMEM_B x SMEM_B accumulator ---
+  document.getElementById('cd').textContent = SMEM + '\u00d7' + SMEM + ' accum';
+
+  var gc = document.getElementById('gc'); gc.innerHTML = '';
+  gc.style.gridTemplateColumns = 'repeat(' + SMEM_B + ',' + CSZ + 'px)';
+  for (var r = 0; r < SMEM_B; r++) {
+    for (var c = 0; c < SMEM_B; c++) {
+      var d = mk('div', 'cell');
+      d.style.width = CSZ + 'px'; d.style.height = CSZ + 'px';
+      d.style.background = BK[4];
+      gc.appendChild(d);
+    }
+  }
+
+  // --- Play button ---
+  var pb = document.getElementById('playbtn');
+  pb.innerHTML = ST.playing ? '&#x25a0;' : '&#x25b7;';
+
+  // --- Formula ---
+  var accum = absK === 0 ? 0 : 1;
+  var assign = accum ? '+=' : '=';
+  document.getElementById('fbox').innerHTML =
+    '<span class="formula">MMA m128n128k16, accum=' + accum + '</span> | C ' + assign + ' A[n, k] \u00d7 B[k, m]<br>' +
+    '<b>TMA</b>: A[' + (nStart * BLOCK) + ':' + (nEnd * BLOCK) + ', ' +
+    (kSmemStart * BLOCK) + ':' + (kSmemEnd * BLOCK) + '] \u2192 smem' +
+    ' | <b>TensorCore</b>: K=' + (absKGlobal * BLOCK) + '\u2013' + (absKGlobal * BLOCK + BLOCK - 1);
+
+  // --- Info ---
+  document.getElementById('inf').textContent =
+    'N block ' + ST.nBlock + '/' + N_TILES +
+    ' | K step ' + absK + ' of ' + TOTAL_K +
+    ' (outer K=' + ST.outerK + ', inner K=' + ST.innerK + ')';
+
+  // --- Legend ---
+  var sl = document.getElementById('sl');
+  sl.innerHTML = '';
+  var items = [
+    {c: BK[0], o: 1, b: true, t: 'TensorCore read (current)'},
+    {c: BK[0], o: .6, b: false, t: 'In smem (waiting)'},
+    {c: BK[0], o: 1, b: false, t: 'In gmem'},
+    {c: '#dde0e4', o: 1, b: false, t: 'Consumed'},
+  ];
+  for (var i = 0; i < items.length; i++) {
+    var li = mk('div', 'li');
+    var sw = mk('div', 'swtch');
+    sw.style.background = items[i].c;
+    sw.style.opacity = items[i].o;
+    if (items[i].b) { sw.style.border = '2px solid #222'; sw.style.boxSizing = 'border-box'; }
+    li.appendChild(sw);
+    li.appendChild(document.createTextNode(items[i].t));
+    sl.appendChild(li);
+    if (i < items.length - 1) sl.appendChild(mk('div', 'leg-sep'));
+  }
+}
+
+(function init() {
+  var TOTAL_STEPS = N_TILES * TOTAL_K;  // 2 * 16 = 32
+  document.getElementById('playbtn').onclick = function() {
+    if (ST.playing) { clearInterval(ST.timer); ST.playing = false; draw(); return; }
+    ST.playing = true; draw();
+    ST.timer = setInterval(function() {
+      var next = globalStep() + 1;
+      if (next >= TOTAL_STEPS) {
+        next = 0; ST.playing = false; clearInterval(ST.timer);
+      }
+      setGlobalStep(next);
+      syncButtons();
+      draw();
+    }, 500);
+  };
+  document.getElementById('nb').onclick = function(e) {
+    var b = e.target.closest('.btn'); if (!b) return;
+    ST.nBlock = +b.dataset.v;
+    this.querySelectorAll('.btn').forEach(function(x) { x.classList.remove('on'); });
+    b.classList.add('on');
+    if (ST.playing) { clearInterval(ST.timer); ST.playing = false; }
+    draw();
+  };
+  document.getElementById('ok').onclick = function(e) {
+    var b = e.target.closest('.btn'); if (!b) return;
+    ST.outerK = +b.dataset.v;
+    this.querySelectorAll('.btn').forEach(function(x) { x.classList.remove('on'); });
+    b.classList.add('on');
+    if (ST.playing) { clearInterval(ST.timer); ST.playing = false; }
+    draw();
+  };
+  document.getElementById('ik').onclick = function(e) {
+    var b = e.target.closest('.btn'); if (!b) return;
+    ST.innerK = +b.dataset.v;
+    this.querySelectorAll('.btn').forEach(function(x) { x.classList.remove('on'); });
+    b.classList.add('on');
+    if (ST.playing) { clearInterval(ST.timer); ST.playing = false; }
+    draw();
+  };
+  draw();
+})();
+</script>
+
+
+</body></html>

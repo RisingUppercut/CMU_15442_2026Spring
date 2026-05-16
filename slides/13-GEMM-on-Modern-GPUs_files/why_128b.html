@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<!-- saved from url=(0071)https://mlsyscourse.org/slides/modern-gpu-gemm/demo/why_128b.html?embed -->
+<html lang="en" data-immersive-translate-page-theme="light"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+
+<title>Why Prefer 128B Swizzle</title>
+<link rel="stylesheet" href="./viz-base.css">
+<script src="./viz-base.js.下载"></script>
+<style>
+  .main { max-width:1200px; margin:0 auto; display:flex; gap:16px; justify-content:center; align-items:flex-start; }
+  .card { background:var(--surface); border-radius:10px; padding:14px 16px; border:1px solid var(--border);
+    box-shadow:0 1px 3px rgba(0,0,0,.06); text-align:center; flex:1; min-width:140px; }
+  .card h2 { font-size:14px; font-weight:700; margin-bottom:2px; }
+  .card.best { border-color:var(--color-good); border-width:2px; }
+  .card .dims { font-size:11px; color:var(--dim); margin-bottom:8px; font-weight:600; }
+
+  .grid { display:inline-grid; gap:1px; margin:4px auto; }
+  .hdr { font-size:8px; color:var(--dim); text-align:center; padding:1px 0; font-weight:600; }
+  .rl { font-size:8px; color:var(--dim); display:flex; align-items:center; justify-content:flex-end;
+    padding-right:2px; font-weight:600; }
+  .cell {
+    border-radius:3px; display:flex; align-items:center; justify-content:center;
+    font-size:8px; font-weight:700; color:#fff; text-shadow:0 1px 1px rgba(0,0,0,.2);
+    border:2px solid transparent; transition:all .12s;
+  }
+  .cell.hl { border-color:#222; z-index:1; }
+  .cell.dm { opacity:.18; }
+  .cell.blank { background:transparent !important; color:transparent; border:none; }
+
+  .metric { margin-top:8px; font-size:13px; font-weight:700; }
+  .metric.good { color:var(--color-good); }
+  .metric.ok { color:var(--dim); }
+  .metric-detail { font-size:11px; color:var(--dim); font-weight:600; margin-top:2px; line-height:1.4; }
+
+  .conclusion { max-width:1200px; margin:14px auto 0; background:#f0fdf4; border:1px solid #bbf7d0;
+    border-radius:10px; padding:12px 18px; font-size:14px; font-weight:600; color:var(--color-good);
+    text-align:center; }
+
+  .info { max-width:1200px; margin:12px auto 0; background:var(--surface); border:1px solid var(--border);
+    border-radius:8px; padding:10px 16px; font-size:12px; line-height:1.6; }
+  .info .formula { font-family:'SF Mono','Fira Code',monospace; color:var(--accent); font-weight:600; }
+
+  .leg { gap:0; margin-top:12px; }
+</style>
+<style data-id="immersive-translate-input-injected-css"></style></head>
+<body>
+
+<h1>Why Prefer 128B Swizzle?</h1>
+<div class="sub">Each row of an atom is contiguous in global memory — wider rows = better locality</div>
+
+<div class="controls">
+  <div><span class="lbl">Highlight row</span>
+    <div class="bg" id="rh">
+      <button class="btn" data-v="-1">None</button>
+      <button class="btn on" data-v="0">r0</button>
+      <button class="btn" data-v="1">r1</button>
+      <button class="btn" data-v="2">r2</button>
+      <button class="btn" data-v="3">r3</button>
+    </div>
+  </div>
+</div>
+
+<div class="main" id="main"><div class="card best"><h2>SWIZZLE_128B</h2><div class="dims">8 rows × 8 cols = 8 × 128B</div><div class="grid" style="grid-template-columns: 16px repeat(8, 28px);"><div class="hdr"></div><div class="hdr">c0</div><div class="hdr">c1</div><div class="hdr">c2</div><div class="hdr">c3</div><div class="hdr">c4</div><div class="hdr">c5</div><div class="hdr">c6</div><div class="hdr">c7</div><div class="rl">r0</div><div class="cell hl" style="width: 28px; height: 28px; background: rgb(91, 155, 213);">0</div><div class="cell hl" style="width: 28px; height: 28px; background: rgb(237, 154, 60);">1</div><div class="cell hl" style="width: 28px; height: 28px; background: rgb(217, 85, 85);">2</div><div class="cell hl" style="width: 28px; height: 28px; background: rgb(69, 181, 165);">3</div><div class="cell hl" style="width: 28px; height: 28px; background: rgb(95, 184, 95);">4</div><div class="cell hl" style="width: 28px; height: 28px; background: rgb(224, 184, 40);">5</div><div class="cell hl" style="width: 28px; height: 28px; background: rgb(157, 110, 181);">6</div><div class="cell hl" style="width: 28px; height: 28px; background: rgb(232, 120, 136);">7</div><div class="rl">r1</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(91, 155, 213);">0</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(237, 154, 60);">1</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(217, 85, 85);">2</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(69, 181, 165);">3</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(95, 184, 95);">4</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(224, 184, 40);">5</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(157, 110, 181);">6</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(232, 120, 136);">7</div><div class="rl">r2</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(91, 155, 213);">0</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(237, 154, 60);">1</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(217, 85, 85);">2</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(69, 181, 165);">3</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(95, 184, 95);">4</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(224, 184, 40);">5</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(157, 110, 181);">6</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(232, 120, 136);">7</div><div class="rl">r3</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(91, 155, 213);">0</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(237, 154, 60);">1</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(217, 85, 85);">2</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(69, 181, 165);">3</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(95, 184, 95);">4</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(224, 184, 40);">5</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(157, 110, 181);">6</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(232, 120, 136);">7</div><div class="rl">r4</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(91, 155, 213);">0</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(237, 154, 60);">1</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(217, 85, 85);">2</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(69, 181, 165);">3</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(95, 184, 95);">4</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(224, 184, 40);">5</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(157, 110, 181);">6</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(232, 120, 136);">7</div><div class="rl">r5</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(91, 155, 213);">0</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(237, 154, 60);">1</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(217, 85, 85);">2</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(69, 181, 165);">3</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(95, 184, 95);">4</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(224, 184, 40);">5</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(157, 110, 181);">6</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(232, 120, 136);">7</div><div class="rl">r6</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(91, 155, 213);">0</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(237, 154, 60);">1</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(217, 85, 85);">2</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(69, 181, 165);">3</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(95, 184, 95);">4</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(224, 184, 40);">5</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(157, 110, 181);">6</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(232, 120, 136);">7</div><div class="rl">r7</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(91, 155, 213);">0</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(237, 154, 60);">1</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(217, 85, 85);">2</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(69, 181, 165);">3</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(95, 184, 95);">4</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(224, 184, 40);">5</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(157, 110, 181);">6</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(232, 120, 136);">7</div></div><div class="metric good">128B per row</div><div class="metric-detail">8 sectors × 16B = 128B contiguous</div></div><div class="card"><h2>SWIZZLE_64B</h2><div class="dims">8 rows × 4 cols = 8 × 64B</div><div class="grid" style="grid-template-columns: 16px repeat(8, 28px);"><div class="hdr"></div><div class="hdr">c0</div><div class="hdr">c1</div><div class="hdr">c2</div><div class="hdr">c3</div><div class="hdr"></div><div class="hdr"></div><div class="hdr"></div><div class="hdr"></div><div class="rl">r0</div><div class="cell hl" style="width: 28px; height: 28px; background: rgb(91, 155, 213);">0</div><div class="cell hl" style="width: 28px; height: 28px; background: rgb(237, 154, 60);">1</div><div class="cell hl" style="width: 28px; height: 28px; background: rgb(217, 85, 85);">2</div><div class="cell hl" style="width: 28px; height: 28px; background: rgb(69, 181, 165);">3</div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="rl">r1</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(95, 184, 95);">0</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(224, 184, 40);">1</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(157, 110, 181);">2</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(232, 120, 136);">3</div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="rl">r2</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(91, 155, 213);">0</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(237, 154, 60);">1</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(217, 85, 85);">2</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(69, 181, 165);">3</div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="rl">r3</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(95, 184, 95);">0</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(224, 184, 40);">1</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(157, 110, 181);">2</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(232, 120, 136);">3</div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="rl">r4</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(91, 155, 213);">0</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(237, 154, 60);">1</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(217, 85, 85);">2</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(69, 181, 165);">3</div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="rl">r5</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(95, 184, 95);">0</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(224, 184, 40);">1</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(157, 110, 181);">2</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(232, 120, 136);">3</div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="rl">r6</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(91, 155, 213);">0</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(237, 154, 60);">1</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(217, 85, 85);">2</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(69, 181, 165);">3</div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="rl">r7</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(95, 184, 95);">0</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(224, 184, 40);">1</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(157, 110, 181);">2</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(232, 120, 136);">3</div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div></div><div class="metric ok">64B per row</div><div class="metric-detail">4 sectors × 16B = 64B contiguous</div></div><div class="card"><h2>SWIZZLE_32B</h2><div class="dims">8 rows × 2 cols = 8 × 32B</div><div class="grid" style="grid-template-columns: 16px repeat(8, 28px);"><div class="hdr"></div><div class="hdr">c0</div><div class="hdr">c1</div><div class="hdr"></div><div class="hdr"></div><div class="hdr"></div><div class="hdr"></div><div class="hdr"></div><div class="hdr"></div><div class="rl">r0</div><div class="cell hl" style="width: 28px; height: 28px; background: rgb(91, 155, 213);">0</div><div class="cell hl" style="width: 28px; height: 28px; background: rgb(237, 154, 60);">1</div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="rl">r1</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(217, 85, 85);">0</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(69, 181, 165);">1</div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="rl">r2</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(95, 184, 95);">0</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(224, 184, 40);">1</div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="rl">r3</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(157, 110, 181);">0</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(232, 120, 136);">1</div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="rl">r4</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(91, 155, 213);">0</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(237, 154, 60);">1</div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="rl">r5</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(217, 85, 85);">0</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(69, 181, 165);">1</div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="rl">r6</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(95, 184, 95);">0</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(224, 184, 40);">1</div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="rl">r7</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(157, 110, 181);">0</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(232, 120, 136);">1</div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div></div><div class="metric ok">32B per row</div><div class="metric-detail">2 sectors × 16B = 32B contiguous</div></div><div class="card"><h2>SWIZZLE_16B</h2><div class="dims">8 rows × 1 col = 8 × 16B</div><div class="grid" style="grid-template-columns: 16px repeat(8, 28px);"><div class="hdr"></div><div class="hdr">c0</div><div class="hdr"></div><div class="hdr"></div><div class="hdr"></div><div class="hdr"></div><div class="hdr"></div><div class="hdr"></div><div class="hdr"></div><div class="rl">r0</div><div class="cell hl" style="width: 28px; height: 28px; background: rgb(91, 155, 213);">0</div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="rl">r1</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(237, 154, 60);">0</div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="rl">r2</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(217, 85, 85);">0</div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="rl">r3</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(69, 181, 165);">0</div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="rl">r4</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(95, 184, 95);">0</div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="rl">r5</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(224, 184, 40);">0</div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="rl">r6</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(157, 110, 181);">0</div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="rl">r7</div><div class="cell dm" style="width: 28px; height: 28px; background: rgb(232, 120, 136);">0</div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div><div class="cell blank"></div></div><div class="metric ok">16B per row</div><div class="metric-detail">1 sector × 16B = 16B contiguous</div></div></div>
+
+<div class="conclusion" id="conc">128B atom reads 128 contiguous bytes per row from global memory — 8× more locality than 16B interleaved</div>
+
+<div class="info">
+  <b>From tensor core side</b>: any swizzle format works (16×16 tile decomposes into any atom size).<br>
+  <b>From global memory side</b>: each atom row is a contiguous segment. Wider row = fewer, larger reads = better bandwidth.<br>
+  <span class="formula">SWIZZLE_128B</span> gives 128 contiguous bytes per row — the best default unless tile width &lt; 64 fp16.
+</div>
+
+<div class="leg">
+  <div class="leg-row" id="sl"><div class="li"><div class="swtch" style="background: rgb(91, 155, 213);"></div>Sector 0</div><div class="li"><div class="swtch" style="background: rgb(237, 154, 60);"></div>Sector 1</div><div class="li"><div class="swtch" style="background: rgb(217, 85, 85);"></div>Sector 2</div><div class="li"><div class="swtch" style="background: rgb(69, 181, 165);"></div>Sector 3</div><div class="li"><div class="swtch" style="background: rgb(95, 184, 95);"></div>Sector 4</div><div class="li"><div class="swtch" style="background: rgb(224, 184, 40);"></div>Sector 5</div><div class="li"><div class="swtch" style="background: rgb(157, 110, 181);"></div>Sector 6</div><div class="li"><div class="swtch" style="background: rgb(232, 120, 136);"></div>Sector 7</div><div class="leg-sep"></div><div class="li">1 cell = 16 bytes = 1 bank sector  |  Highlighted row = contiguous in global memory</div></div>
+</div>
+
+<script>
+var BK = ['#5b9bd5','#ed9a3c','#d95555','#45b5a5','#5fb85f','#e0b828','#9d6eb5','#e87888'];
+var SECS = 8, ROWS = 8, DISPLAY_COLS = 8;
+
+var FORMATS = [
+  { name: '128B', ac: 8, div: 1, bytes: 128 },
+  { name: '64B',  ac: 4, div: 2, bytes: 64 },
+  { name: '32B',  ac: 2, div: 4, bytes: 32 },
+  { name: '16B',  ac: 1, div: 8, bytes: 16 },
+];
+
+var ST = { row: 0 };
+var CSZ = 28;
+
+function mk(t, c) { var d = document.createElement(t); if (c) d.className = c; return d; }
+
+function draw() {
+  var main = document.getElementById('main');
+  main.innerHTML = '';
+
+  for (var fi = 0; fi < FORMATS.length; fi++) {
+    var fmt = FORMATS[fi];
+    var ac = fmt.ac, div = fmt.div;
+
+    var card = mk('div', 'card' + (fi === 0 ? ' best' : ''));
+    var h2 = mk('h2');
+    h2.textContent = 'SWIZZLE_' + fmt.name;
+    card.appendChild(h2);
+
+    var dims = mk('div', 'dims');
+    dims.textContent = '8 rows \u00d7 ' + ac + ' col' + (ac > 1 ? 's' : '') + ' = 8 \u00d7 ' + fmt.bytes + 'B';
+    card.appendChild(dims);
+
+    // Atom grid (same drawing logic as swizzle_atom_general)
+    var grid = mk('div', 'grid');
+    grid.style.gridTemplateColumns = '16px repeat(' + DISPLAY_COLS + ',' + CSZ + 'px)';
+
+    // Column headers
+    grid.appendChild(mk('div', 'hdr'));
+    for (var p = 0; p < DISPLAY_COLS; p++) {
+      var h = mk('div', 'hdr');
+      h.textContent = p < ac ? 'c' + p : '';
+      grid.appendChild(h);
+    }
+
+    // Rows
+    for (var r = 0; r < ROWS; r++) {
+      var rl = mk('div', 'rl');
+      rl.textContent = 'r' + r;
+      grid.appendChild(rl);
+
+      for (var p = 0; p < DISPLAY_COLS; p++) {
+        if (p >= ac) {
+          grid.appendChild(mk('div', 'cell blank'));
+          continue;
+        }
+        var d = mk('div', 'cell');
+        d.style.width = CSZ + 'px';
+        d.style.height = CSZ + 'px';
+        d.style.background = BK[(r % div) * ac + p];
+        d.textContent = p;
+
+        // Highlight selected row
+        if (ST.row >= 0 && r === ST.row) {
+          d.classList.add('hl');
+        } else if (ST.row >= 0) {
+          d.classList.add('dm');
+        }
+
+        grid.appendChild(d);
+      }
+    }
+    card.appendChild(grid);
+
+    // Metric: contiguous bytes per row
+    var metric = mk('div', 'metric ' + (fi === 0 ? 'good' : 'ok'));
+    metric.textContent = fmt.bytes + 'B per row';
+    card.appendChild(metric);
+
+    var detail = mk('div', 'metric-detail');
+    detail.textContent = ac + ' sector' + (ac > 1 ? 's' : '') + ' \u00d7 16B = ' + fmt.bytes + 'B contiguous';
+    card.appendChild(detail);
+
+    main.appendChild(card);
+  }
+
+  // Conclusion
+  document.getElementById('conc').textContent =
+    '128B atom reads 128 contiguous bytes per row from global memory \u2014 ' +
+    (128 / 16) + '\u00d7 more locality than 16B interleaved';
+
+  // Legend
+  var sl = document.getElementById('sl');
+  sl.innerHTML = '';
+  for (var i = 0; i < 8; i++) {
+    var li = mk('div', 'li');
+    var sw = mk('div', 'swtch');
+    sw.style.background = BK[i];
+    li.appendChild(sw);
+    li.appendChild(document.createTextNode('Sector ' + i));
+    sl.appendChild(li);
+  }
+  var sep = mk('div', 'leg-sep');
+  sl.appendChild(sep);
+  var cv = mk('div', 'li');
+  cv.textContent = '1 cell = 16 bytes = 1 bank sector  |  Highlighted row = contiguous in global memory';
+  sl.appendChild(cv);
+}
+
+(function init() {
+  document.getElementById('rh').onclick = function(e) {
+    var b = e.target.closest('.btn'); if (!b) return;
+    ST.row = +b.dataset.v;
+    document.querySelectorAll('#rh .btn').forEach(function(x) { x.classList.remove('on'); });
+    b.classList.add('on');
+    draw();
+  };
+  draw();
+})();
+</script>
+
+
+</body></html>

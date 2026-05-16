@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<!-- saved from url=(0076)https://mlsyscourse.org/slides/modern-gpu-gemm/demo/gemm_workflow.html?embed -->
+<html lang="en" data-immersive-translate-page-theme="light"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+
+<title>GEMM Optimization</title>
+<link rel="stylesheet" href="./viz-base.css">
+<script src="./viz-base.js.下载"></script>
+<style>
+  .flow { max-width:1100px; margin:0 auto; display:flex; flex-direction:column; align-items:center; gap:0; }
+
+  .step { background:var(--surface); border-radius:12px; padding:16px 24px; border:2px solid var(--border);
+    box-shadow:0 2px 8px rgba(0,0,0,.08); width:700px; text-align:center; cursor:pointer;
+    transition:all .2s; position:relative; }
+  .step:hover { border-color:var(--accent); box-shadow:0 4px 16px rgba(59,130,246,.15); }
+  .step.active { border-color:var(--accent); background:var(--color-hover-bg); }
+  .step .num { position:absolute; left:-40px; top:50%; transform:translateY(-50%); width:28px; height:28px;
+    border-radius:50%; background:var(--accent); color:#fff; font-weight:700; font-size:13px;
+    display:flex; align-items:center; justify-content:center; }
+  .step h2 { font-size:16px; font-weight:700; margin-bottom:4px; }
+  .step p { font-size:13px; color:var(--dim); line-height:1.5; margin:0; }
+  .step .formula { font-family:'SF Mono','Fira Code',monospace; color:var(--accent); font-weight:600; }
+  .step .constraint { font-size:12px; color:var(--color-group-2); font-weight:600; margin-top:4px; }
+
+  .arrow-down { width:2px; height:30px; background:var(--accent); position:relative; }
+  .arrow-down::after { content:''; position:absolute; bottom:-6px; left:-5px; border-left:6px solid transparent;
+    border-right:6px solid transparent; border-top:8px solid var(--accent); }
+
+  .detail-box { max-width:1100px; margin:20px auto 0; background:var(--surface); border:1px solid var(--border);
+    border-radius:10px; padding:14px 20px; min-height:80px; }
+  .detail-box h3 { font-size:14px; font-weight:700; margin-bottom:6px; color:var(--accent); }
+  .detail-box p { font-size:13px; line-height:1.6; margin:0 0 4px; }
+  .detail-box .formula { font-family:'SF Mono','Fira Code',monospace; color:var(--accent); font-weight:600; }
+
+  .summary { max-width:1100px; margin:16px auto 0; background:#f0fdf4; border:1px solid #bbf7d0;
+    border-radius:10px; padding:12px 18px; font-size:13px; color:var(--color-good); text-align:center;
+    font-weight:600; }
+</style>
+<style data-id="immersive-translate-input-injected-css"></style></head>
+<body>
+
+<h1>GEMM Optimization</h1>
+<div class="sub">From shared memory tiling to TMA data movement</div>
+
+<div class="flow" id="flow"><div class="step"><div class="num">1</div><h2>1. Decide Tiling Shape on Shared Memory</h2><p>Choose tile dimensions for A and B in shared memory</p><div class="constraint">→ Tile shape determines TensorCore utilization and shared memory usage</div></div><div class="arrow-down"></div><div class="step"><div class="num">2</div><h2>2. Pick the Best Swizzle (Prefer Large)</h2><p>128B &gt; 64B &gt; 32B &gt; 16B for global memory locality</p><div class="constraint">→ 128B gives 128 contiguous bytes per atom row</div></div><div class="arrow-down"></div><div class="step"><div class="num">3</div><h2>3. Tile Shared Memory Based on Swizzle Constraint</h2><p>Inner tile width must match swizzle atom width</p><div class="constraint">→ If tile wider than atom, split into groups</div></div><div class="arrow-down"></div><div class="step"><div class="num">4</div><h2>4. TMA: Global → Shared with Swizzle</h2><p>3D TMA with (group, row, col) coordinates</p><div class="constraint">→ Hardware handles addressing, tiling, and swizzle</div></div></div>
+<div class="detail-box" id="detail">
+  <h3>Click a step to see details</h3>
+  <p>Design shared memory layout first, then configure TMA to fill it efficiently.</p>
+</div>
+<div class="summary">
+  Tiling shape → Best swizzle → Swizzle-constrained tiling → TMA with swizzle
+</div>
+
+<script>
+const STEPS = [
+  {
+    title: '1. Decide Tiling Shape on Shared Memory',
+    subtitle: 'Choose tile dimensions for A and B in shared memory',
+    constraint: 'Tile shape determines TensorCore utilization and shared memory usage',
+    detail: '<h3>Step 1: Shared Memory Tiling</h3><p>Choose the tile dimensions (M_tile, N_tile, K_tile) for shared memory.</p><p>Each thread block computes a M_tile \u00d7 N_tile output tile, iterating over K in chunks of K_tile.</p><p>The tile shape determines how many tensor core instructions run per iteration and how much shared memory is needed.</p>'
+  },
+  {
+    title: '2. Pick the Best Swizzle (Prefer Large)',
+    subtitle: '128B > 64B > 32B > 16B for global memory locality',
+    constraint: '128B gives 128 contiguous bytes per atom row',
+    detail: '<h3>Step 2: Swizzle Selection</h3><p>Prefer <span class="formula">SWIZZLE_128B</span> unless tile width is too narrow.</p><p>Each atom row is contiguous in global memory \u2014 wider atom = better locality.</p><p>128B: 8\u00d78 sectors (128B/row), 64B: 8\u00d74 (64B/row), 32B: 8\u00d72 (32B/row), 16B: 8\u00d71 (16B/row).</p>'
+  },
+  {
+    title: '3. Tile Shared Memory Based on Swizzle Constraint',
+    subtitle: 'Inner tile width must match swizzle atom width',
+    constraint: 'If tile wider than atom, split into groups',
+    detail: '<h3>Step 3: Swizzle-Aware Tiling</h3><p>SWIZZLE_128B atom = 8 rows \u00d7 128 bytes = 8 \u00d7 64 fp16.</p><p>If shared memory tile is wider than 64 fp16, tile into <b>groups</b> of atom-width columns.</p><p>Example: 16\u00d7128 fp16 \u2192 2 groups of 16\u00d764, each group contains swizzle atoms stacked vertically.</p>'
+  },
+  {
+    title: '4. TMA: Global \u2192 Shared with Swizzle',
+    subtitle: '3D TMA with (group, row, col) coordinates',
+    constraint: 'Hardware handles addressing, tiling, and swizzle',
+    detail: '<h3>Step 4: TMA Configuration</h3><p>Configure TMA tensor map with:</p><p>\u2022 <span class="formula">swizzle_mode = SWIZZLE_128B</span></p><p>\u2022 <span class="formula">box_size = {rows, groups, inner_cols}</span></p><p>\u2022 <span class="formula">tensor_dims = 3D: (nGroups, rows, innerCols)</span></p><p>TMA handles address computation, bounds checking, tiling, and swizzle \u2014 all in hardware.</p>'
+  },
+];
+
+function mk(t, c) { const d = document.createElement(t); if (c) d.className = c; return d; }
+
+(function init() {
+  const flow = document.getElementById('flow');
+  const detail = document.getElementById('detail');
+
+  for (let i = 0; i < STEPS.length; i++) {
+    if (i > 0) flow.appendChild(mk('div', 'arrow-down'));
+    const step = mk('div', 'step');
+    step.innerHTML = '<div class="num">' + (i + 1) + '</div>' +
+      '<h2>' + STEPS[i].title + '</h2>' +
+      '<p>' + STEPS[i].subtitle + '</p>' +
+      '<div class="constraint">\u2192 ' + STEPS[i].constraint + '</div>';
+    step.onclick = (idx => () => {
+      flow.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
+      step.classList.add('active');
+      detail.innerHTML = STEPS[idx].detail;
+    })(i);
+    flow.appendChild(step);
+  }
+})();
+</script>
+
+
+</body></html>

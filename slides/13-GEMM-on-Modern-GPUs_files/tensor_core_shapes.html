@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<!-- saved from url=(0081)https://mlsyscourse.org/slides/modern-gpu-gemm/demo/tensor_core_shapes.html?embed -->
+<html lang="en" data-immersive-translate-page-theme="light"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+
+<title>Tensor Core</title>
+<link rel="stylesheet" href="./viz-base.css">
+<script src="./viz-base.js.下载"></script>
+<style>
+  .main { display:flex; gap:24px; max-width:1200px; margin:0 auto; justify-content:center; align-items:flex-start; flex-wrap:wrap; }
+  .mat-box { background:var(--surface); border-radius:10px; padding:14px; border:1px solid var(--border);
+    box-shadow:0 1px 3px rgba(0,0,0,.06); text-align:center; }
+  .mat-box h2 { font-size:14px; font-weight:700; margin-bottom:4px; }
+  .mat-box .dims { font-size:11px; color:var(--dim); margin-bottom:8px; font-weight:600; }
+
+  .grid { display:inline-grid; gap:1px; }
+  .cell {
+    border-radius:3px; display:flex; align-items:center; justify-content:center;
+    font-size:8px; font-weight:700; border:2px solid transparent; transition:all .15s;
+    cursor:pointer; min-width:0; color:#fff; text-shadow:0 1px 1px rgba(0,0,0,.2);
+  }
+  .cell.idle { background:var(--color-cell-bg); color:var(--text); text-shadow:none; }
+  .cell.active { border-color:#222; border-width:2px; z-index:1; }
+  .cell.dim { background:#e2e5ea !important; color:#aaa !important; text-shadow:none !important; opacity:1; }
+
+  .op { font-size:22px; display:flex; align-items:center; justify-content:center; color:var(--dim);
+    font-weight:700; padding:0 6px; align-self:center; }
+  .eq { font-size:18px; display:flex; align-items:center; justify-content:center; color:var(--dim);
+    font-weight:700; padding:0 6px; align-self:center; }
+
+  .anim-bar { max-width:1200px; margin:18px auto 0; display:flex; gap:8px; justify-content:center; align-items:center; }
+  #kbar { display:flex; gap:2px; }
+  .anim-bar .lbl { font-size:12px; color:var(--dim); font-weight:600; }
+  .kb { width:36px; height:30px; border:1px solid var(--border); background:var(--surface); color:var(--text);
+    cursor:pointer; border-radius:0; font-size:12px; font-family:inherit; display:flex; align-items:center;
+    justify-content:center; transition:all .12s; font-weight:600; }
+  .kb:hover { background:#eef0f4; }
+  .kb.on { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .kb.done { background:#93c5fd; border-color:#93c5fd; color:#fff; }
+
+  .formula-box { max-width:1200px; margin:12px auto 0; background:var(--surface); border:1px solid var(--border);
+    border-radius:8px; padding:10px 16px; text-align:center; font-size:14px;
+    font-family:'SF Mono','Fira Code',monospace; color:var(--accent); font-weight:600; }
+
+  .info { max-width:1200px; margin:14px auto 0; text-align:center; font-size:13px; color:var(--dim); font-weight:600; }
+
+  .leg { gap:0; margin-top:12px; }
+</style>
+<style data-id="immersive-translate-input-injected-css"></style></head>
+<body>
+
+<h1>Tensor Core</h1>
+
+<div class="controls">
+  <div><span class="lbl">Transpose A</span>
+    <div class="bg" id="ta">
+      <button class="btn on" data-v="0">No</button>
+      <button class="btn" data-v="1">Yes</button>
+    </div>
+  </div>
+  <div><span class="lbl">Transpose B</span>
+    <div class="bg" id="tb">
+      <button class="btn on" data-v="0">No</button>
+      <button class="btn" data-v="1">Yes</button>
+    </div>
+  </div>
+</div>
+<div class="controls">
+  <div><span class="lbl">M (output rows)</span>
+    <div class="bg" id="nc">
+      <button class="btn on" data-v="16">16</button>
+      <button class="btn" data-v="32">32</button>
+      <button class="btn" data-v="64">64</button>
+      <button class="btn" data-v="128">128</button>
+    </div>
+  </div>
+  <div><span class="lbl">N (output cols)</span>
+    <div class="bg" id="mc">
+      <button class="btn on" data-v="16">16</button>
+      <button class="btn" data-v="32">32</button>
+      <button class="btn" data-v="64">64</button>
+      <button class="btn" data-v="128">128</button>
+    </div>
+  </div>
+  <div><span class="lbl">K</span>
+    <div class="bg">
+      <button class="btn on" disabled="">16</button>
+    </div>
+  </div>
+</div>
+<div class="controls">
+  <div><span class="lbl">Row group</span><div class="bg" id="rg"><button class="btn on">0</button><button class="btn">1</button><button class="btn">2</button><button class="btn">3</button><button class="btn">4</button><button class="btn">5</button><button class="btn">6</button><button class="btn">7</button></div></div>
+  <div><span class="lbl">Col group</span><div class="bg" id="cg"><button class="btn on">0</button><button class="btn">1</button><button class="btn">2</button><button class="btn">3</button><button class="btn">4</button><button class="btn">5</button><button class="btn">6</button><button class="btn">7</button></div></div>
+</div>
+
+<div class="main">
+  <div class="mat-box">
+    <h2 style="color:var(--color-group-0)" id="ah">A (128×128)</h2>
+    <div class="dims" id="ad">M×K: M-rows 0-0, K-col 0</div>
+    <div class="grid" id="ga" style="grid-template-columns: repeat(8, 28px);"><div class="cell active" style="width: 28px; height: 28px; background: rgb(91, 155, 213);"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div></div>
+  </div>
+  <div class="op">×</div>
+  <div class="mat-box">
+    <h2 style="color:var(--color-group-1)" id="bh">B (128×128)</h2>
+    <div class="dims" id="bd">K×N: K-row 0, N-cols 0-0</div>
+    <div class="grid" id="gb" style="grid-template-columns: repeat(8, 28px);"><div class="cell active" style="width: 28px; height: 28px; background: rgb(237, 154, 60);"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div><div class="cell idle dim" style="width: 28px; height: 28px;"></div></div>
+  </div>
+  <div class="eq">→</div>
+  <div class="mat-box">
+    <h2 style="color:var(--color-group-4)">C</h2>
+    <div class="dims" id="cd">M×N 16×16 accumulator</div>
+    <div class="grid" id="gc" style="grid-template-columns: repeat(1, 28px);"><div class="cell active" style="width: 28px; height: 28px; background: rgb(95, 184, 95);"></div></div>
+  </div>
+</div>
+
+<div class="anim-bar">
+  <span class="lbl">K iteration:</span>
+  <div id="kbar"><button class="kb" style="width: 36px; font-size: 16px;">▷</button><button class="kb on">0</button><button class="kb">1</button><button class="kb">2</button><button class="kb">3</button><button class="kb">4</button><button class="kb">5</button><button class="kb">6</button><button class="kb">7</button></div>
+</div>
+
+<div class="formula-box" id="fbox">MMA m16n16k16, accum=0  |  C = A[m, k] × B[k, n]</div>
+<div class="info" id="inf">K step 0 of 8  |  A reads 1 block, B reads 1 block</div>
+
+<script>
+const BK = ['#5b9bd5','#ed9a3c','#d95555','#45b5a5','#5fb85f','#e0b828','#9d6eb5','#e87888'];
+const TOTAL = 128, BLOCK = 16;
+const BCOUNT = TOTAL / BLOCK; // 8x8 blocks
+const ST = { m: 16, n: 16, k: 0, rg: 0, cg: 0, tA: false, tB: false, playing: false, timer: null };
+
+function rebuildGroups() {
+  const nBlocks = ST.n / BLOCK;
+  const mBlocks = ST.m / BLOCK;
+  const nGroups = BCOUNT / nBlocks;
+  const mGroups = BCOUNT / mBlocks;
+  // Clamp
+  if (ST.rg >= nGroups) ST.rg = 0;
+  if (ST.cg >= mGroups) ST.cg = 0;
+
+  const rg = document.getElementById('rg'); rg.innerHTML = '';
+  for (let i = 0; i < nGroups; i++) {
+    const b = mk('button', 'btn' + (ST.rg === i ? ' on' : '')); b.textContent = i;
+    b.onclick = (v => () => { ST.rg = v; rg.querySelectorAll('.btn').forEach(x => x.classList.remove('on')); b.classList.add('on'); draw(); })(i);
+    rg.appendChild(b);
+  }
+  const cg = document.getElementById('cg'); cg.innerHTML = '';
+  for (let i = 0; i < mGroups; i++) {
+    const b = mk('button', 'btn' + (ST.cg === i ? ' on' : '')); b.textContent = i;
+    b.onclick = (v => () => { ST.cg = v; cg.querySelectorAll('.btn').forEach(x => x.classList.remove('on')); b.classList.add('on'); draw(); })(i);
+    cg.appendChild(b);
+  }
+}
+
+function draw() {
+  const nBlocks = ST.n / BLOCK;
+  const mBlocks = ST.m / BLOCK;
+  const totalK = BCOUNT;
+  const sz = Math.max(14, Math.min(28, 240 / BCOUNT));
+  const tA = ST.tA, tB = ST.tB;
+  const rOff = ST.rg * nBlocks; // row offset in blocks
+  const cOff = ST.cg * mBlocks; // col offset in blocks
+
+  // Headers
+  document.getElementById('ah').textContent = (tA ? 'A\u1d40' : 'A') + ' (128\u00d7128)';
+  document.getElementById('bh').textContent = (tB ? 'B\u1d40' : 'B') + ' (128\u00d7128)';
+
+  // Dims
+  const nEnd = rOff + nBlocks - 1;
+  const mEnd = cOff + mBlocks - 1;
+  if (tA) {
+    document.getElementById('ad').textContent = 'K\u00d7M: K-row ' + (ST.k < 0 ? 'all' : ST.k) + ', M-cols ' + rOff + '-' + nEnd;
+  } else {
+    document.getElementById('ad').textContent = 'M\u00d7K: M-rows ' + rOff + '-' + nEnd + ', K-col ' + (ST.k < 0 ? 'all' : ST.k);
+  }
+  if (tB) {
+    document.getElementById('bd').textContent = 'N\u00d7K: N-rows ' + cOff + '-' + mEnd + ', K-col ' + (ST.k < 0 ? 'all' : ST.k);
+  } else {
+    document.getElementById('bd').textContent = 'K\u00d7N: K-row ' + (ST.k < 0 ? 'all' : ST.k) + ', N-cols ' + cOff + '-' + mEnd;
+  }
+  document.getElementById('cd').textContent = 'M\u00d7N ' + ST.n + '\u00d7' + ST.m + ' accumulator';
+
+  // Matrix A: 8x8 grid of blocks
+  const ga = document.getElementById('ga'); ga.innerHTML = '';
+  ga.style.gridTemplateColumns = 'repeat(' + BCOUNT + ',' + sz + 'px)';
+  for (let r = 0; r < BCOUNT; r++) {
+    for (let c = 0; c < BCOUNT; c++) {
+      const d = mk('div', 'cell');
+      d.style.width = sz + 'px'; d.style.height = sz + 'px';
+      const cellN = tA ? c : r;
+      const cellK = tA ? r : c;
+      const inN = cellN >= rOff && cellN < rOff + nBlocks;
+      if (inN) {
+        if (cellK === ST.k) { d.style.background = BK[0]; d.classList.add('active'); }
+        else if (cellK < ST.k) { d.style.background = BK[0]; d.style.opacity = '.4'; }
+        else { d.classList.add('idle', 'dim'); }
+      } else {
+        d.classList.add('idle', 'dim');
+      }
+      ga.appendChild(d);
+    }
+  }
+
+  // Matrix B: 8x8 grid of blocks
+  const gb = document.getElementById('gb'); gb.innerHTML = '';
+  gb.style.gridTemplateColumns = 'repeat(' + BCOUNT + ',' + sz + 'px)';
+  for (let r = 0; r < BCOUNT; r++) {
+    for (let c = 0; c < BCOUNT; c++) {
+      const d = mk('div', 'cell');
+      d.style.width = sz + 'px'; d.style.height = sz + 'px';
+      const cellK = tB ? c : r;
+      const cellM = tB ? r : c;
+      const inM = cellM >= cOff && cellM < cOff + mBlocks;
+      if (inM) {
+        if (cellK === ST.k) { d.style.background = BK[1]; d.classList.add('active'); }
+        else if (cellK < ST.k) { d.style.background = BK[1]; d.style.opacity = '.4'; }
+        else { d.classList.add('idle', 'dim'); }
+      } else {
+        d.classList.add('idle', 'dim');
+      }
+      gb.appendChild(d);
+    }
+  }
+
+  // C: small accumulator tile (nBlocks x mBlocks)
+  const gc = document.getElementById('gc'); gc.innerHTML = '';
+  gc.style.gridTemplateColumns = 'repeat(' + mBlocks + ',' + sz + 'px)';
+  for (let r = 0; r < nBlocks; r++) {
+    for (let c = 0; c < mBlocks; c++) {
+      const d = mk('div', 'cell');
+      d.style.width = sz + 'px'; d.style.height = sz + 'px';
+      d.style.background = BK[4]; d.classList.add('active');
+      gc.appendChild(d);
+    }
+  }
+
+  // K bar
+  const kbar = document.getElementById('kbar'); kbar.innerHTML = '';
+  const pb = mk('button', 'kb'); pb.style.width = '36px'; pb.style.fontSize = '16px';
+  pb.innerHTML = '&#x25b7;';
+  pb.onclick = () => {
+    if (ST.playing) { clearInterval(ST.timer); ST.playing = false; draw(); return; }
+    ST.k = 0; ST.playing = true; draw();
+    ST.timer = setInterval(() => {
+      ST.k++;
+      if (ST.k >= totalK) { ST.k = 0; ST.playing = false; clearInterval(ST.timer); }
+      draw();
+    }, 600);
+  };
+  kbar.appendChild(pb);
+  for (let i = 0; i < totalK; i++) {
+    const b = mk('button', 'kb');
+    if (ST.k === i) b.classList.add('on');
+    else if (i < ST.k) b.classList.add('done');
+    b.textContent = i;
+    b.onclick = (v => () => { ST.k = v; draw(); })(i);
+    kbar.appendChild(b);
+  }
+
+  // Formula
+  const fbox = document.getElementById('fbox');
+  const aRef = tA ? 'A\u1d40[k, m]' : 'A[m, k]';
+  const bRef = tB ? 'B\u1d40[n, k]' : 'B[k, n]';
+  const accum = ST.k === 0 ? 0 : 1;
+  const assign = accum ? '+=' : '=';
+  fbox.textContent = 'MMA m' + ST.n + 'n' + ST.m + 'k16, accum=' + accum + '  |  C ' + assign + ' ' + aRef + ' \u00d7 ' + bRef;
+
+  // Info
+  const inf = document.getElementById('inf');
+  inf.textContent = 'K step ' + ST.k + ' of ' + totalK + '  |  A reads ' + nBlocks + ' block' + (nBlocks > 1 ? 's' : '') + ', B reads ' + mBlocks + ' block' + (mBlocks > 1 ? 's' : '');
+}
+
+function mk(t, c) { const d = document.createElement(t); if (c) d.className = c; return d; }
+
+(function init() {
+  document.getElementById('mc').onclick = e => {
+    const b = e.target.closest('.btn'); if (!b) return;
+    ST.m = +b.dataset.v;
+    document.querySelectorAll('#mc .btn').forEach(x => x.classList.remove('on')); b.classList.add('on');
+    rebuildGroups(); draw();
+  };
+  document.getElementById('nc').onclick = e => {
+    const b = e.target.closest('.btn'); if (!b) return;
+    ST.n = +b.dataset.v;
+    document.querySelectorAll('#nc .btn').forEach(x => x.classList.remove('on')); b.classList.add('on');
+    rebuildGroups(); draw();
+  };
+  document.getElementById('ta').onclick = e => {
+    const b = e.target.closest('.btn'); if (!b) return;
+    ST.tA = b.dataset.v === '1';
+    document.querySelectorAll('#ta .btn').forEach(x => x.classList.remove('on')); b.classList.add('on');
+    draw();
+  };
+  document.getElementById('tb').onclick = e => {
+    const b = e.target.closest('.btn'); if (!b) return;
+    ST.tB = b.dataset.v === '1';
+    document.querySelectorAll('#tb .btn').forEach(x => x.classList.remove('on')); b.classList.add('on');
+    draw();
+  };
+  rebuildGroups();
+  draw();
+})();
+</script>
+
+
+</body></html>

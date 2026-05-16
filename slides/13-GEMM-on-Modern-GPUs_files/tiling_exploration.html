@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<!-- saved from url=(0081)https://mlsyscourse.org/slides/modern-gpu-gemm/demo/tiling_exploration.html?embed -->
+<html lang="en" data-immersive-translate-page-theme="light"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+
+<title>Tiling + Swizzle Exploration</title>
+<link rel="stylesheet" href="./viz-base.css">
+<script src="./viz-base.js.下载"></script>
+<style>
+  .main { display:flex; gap:16px; max-width:1300px; margin:0 auto; align-items:flex-start; }
+  .box { background:var(--surface); border-radius:10px; padding:12px; border:1px solid var(--border);
+    box-shadow:0 1px 3px rgba(0,0,0,.06); flex:1; text-align:center; }
+  .box h2 { text-align:center; font-size:13px; font-weight:700; margin-bottom:8px; color:var(--dim); }
+
+  .grid { display:inline-grid; gap:0; }
+  .hdr { font-size:9px; color:var(--dim); text-align:center; padding:1px 0; font-weight:600; }
+  .rl { font-size:9px; color:var(--dim); display:flex; align-items:center; justify-content:flex-end;
+    padding-right:3px; font-weight:600; }
+  .cell {
+    display:flex; align-items:center; justify-content:center;
+    font-size:8px; font-weight:700; border:1px solid rgba(255,255,255,.15); transition:all .15s;
+    min-width:0; color:#fff; text-shadow:0 1px 1px rgba(0,0,0,.2);
+  }
+  .cell.grey { background:var(--color-cell-bg); color:var(--text); text-shadow:none; border-color:rgba(0,0,0,.06); }
+  .cell.rd { outline:2.5px solid #222; outline-offset:-1px; z-index:1; }
+  .cell.dm { opacity:.18; }
+  .cell.src { outline:2.5px solid var(--accent); outline-offset:-1px; background:var(--color-hover-bg) !important;
+    color:var(--color-hover-text) !important; text-shadow:none; z-index:1; }
+
+  .grid-wrap { position:relative; display:inline-block; }
+  .tile-overlay { position:absolute; top:0; left:0; pointer-events:none; }
+  .tile-overlay line { stroke:#222; stroke-width:2; }
+
+  .groups { display:flex; gap:8px; justify-content:center; flex-wrap:wrap; }
+  .group-label { text-align:center; font-size:11px; font-weight:700; color:var(--accent); margin-bottom:4px; }
+  .group-label.inv { visibility:hidden; }
+
+  .bottom-bar { max-width:1300px; margin:10px auto 0; }
+  .blab { font-size:11px; color:var(--dim); text-align:center; margin-bottom:3px; font-weight:600; }
+  .bbar { display:flex; gap:2px; }
+  .bs {
+    flex:1; height:24px; border-radius:4px; display:flex; align-items:center; justify-content:center;
+    font-size:9px; font-weight:700; color:#fff; border:2px solid transparent; transition:all .15s;
+    text-shadow:0 1px 1px rgba(0,0,0,.2);
+  }
+  .bs.ac { border-color:#222; }
+  .bs.cf { border-color:#d32f2f; }
+  .bs.dm { opacity:.12; }
+
+  .st { text-align:center; margin-top:8px; font-size:13px; font-weight:600; min-height:20px; }
+  .good { color:var(--color-good); }
+  .bad { color:var(--color-bad); }
+
+  .dtype-info { display:inline-flex; gap:8px; align-items:center; margin-left:6px; }
+  .dtype-tag { font-size:11px; font-weight:600; color:var(--accent);
+    font-family:'SF Mono','Fira Code',monospace; background:var(--surface);
+    border:1px solid var(--border); border-radius:4px; padding:2px 7px; }
+
+  .layout-box { max-width:1300px; margin:8px auto 0; background:var(--surface); border:1px solid var(--border);
+    border-radius:8px; padding:8px 14px; font-size:12px; }
+  .layout-box .lcontent { font-family:'SF Mono','Fira Code',monospace; color:var(--accent); font-weight:600; font-size:13px; }
+
+  .formula-box { max-width:1300px; margin:8px auto 0; background:var(--surface); border:1px solid var(--border);
+    border-radius:8px; padding:8px 14px; font-size:12px; }
+  .formula-box .ftitle { font-weight:700; margin-bottom:2px; }
+  .formula-box .fcontent { font-family:'SF Mono','Fira Code',monospace; color:var(--accent); font-weight:600; }
+
+  .leg { gap:0; margin-top:14px; }
+  .leg-row+.leg-row { margin-top:6px; }
+</style>
+<style data-id="immersive-translate-input-injected-css"></style></head>
+<body>
+
+<h1>Tiling + Swizzle Exploration</h1>
+<div class="sub">16×16 matrix — explore how tiling + swizzle affect bank sector conflicts</div>
+
+<div class="controls">
+  <div><span class="lbl">Tile</span>
+    <div class="bg" id="tl">
+      <button class="btn on" data-v="1">Yes</button>
+      <button class="btn" data-v="0">No</button>
+    </div>
+  </div>
+  <div><span class="lbl">Swizzle</span>
+    <div class="bg" id="sw">
+      <button class="btn" data-v="none">None</button>
+      <button class="btn on" data-v="128">128B</button>
+      <button class="btn" data-v="64">64B</button>
+      <button class="btn" data-v="32">32B</button>
+      <button class="btn" data-v="16">16B</button>
+    </div>
+  </div>
+</div>
+<div class="controls">
+  <div><span class="lbl">Row Range</span>
+    <div class="bg" id="rr">
+      <button class="btn on" data-v="0">0-7</button>
+      <button class="btn" data-v="1">8-15</button>
+    </div>
+  </div>
+  <div><span class="lbl">Column</span><div class="bg" id="ci"><button class="btn on">0</button><button class="btn">1</button><button class="btn">2</button><button class="btn">3</button><button class="btn">4</button><button class="btn">5</button><button class="btn">6</button><button class="btn">7</button><button class="btn">8</button><button class="btn">9</button><button class="btn">10</button><button class="btn">11</button><button class="btn">12</button><button class="btn">13</button><button class="btn">14</button><button class="btn">15</button></div></div>
+</div>
+
+<div class="main">
+  <div class="box">
+    <h2>Original 16×16 Matrix</h2>
+    <div class="grid-wrap" id="glw">
+      <div class="grid" id="gl" style="grid-template-columns: 20px repeat(16, 22px);"><div class="hdr"></div><div class="hdr">0</div><div class="hdr">1</div><div class="hdr">2</div><div class="hdr">3</div><div class="hdr">4</div><div class="hdr">5</div><div class="hdr">6</div><div class="hdr">7</div><div class="hdr">8</div><div class="hdr">9</div><div class="hdr">10</div><div class="hdr">11</div><div class="hdr">12</div><div class="hdr">13</div><div class="hdr">14</div><div class="hdr">15</div><div class="rl">0</div><div class="cell grey src" style="width: 22px; height: 22px;">0</div><div class="cell grey dm" style="width: 22px; height: 22px;">1</div><div class="cell grey dm" style="width: 22px; height: 22px;">2</div><div class="cell grey dm" style="width: 22px; height: 22px;">3</div><div class="cell grey dm" style="width: 22px; height: 22px;">4</div><div class="cell grey dm" style="width: 22px; height: 22px;">5</div><div class="cell grey dm" style="width: 22px; height: 22px;">6</div><div class="cell grey dm" style="width: 22px; height: 22px;">7</div><div class="cell grey dm" style="width: 22px; height: 22px;">8</div><div class="cell grey dm" style="width: 22px; height: 22px;">9</div><div class="cell grey dm" style="width: 22px; height: 22px;">10</div><div class="cell grey dm" style="width: 22px; height: 22px;">11</div><div class="cell grey dm" style="width: 22px; height: 22px;">12</div><div class="cell grey dm" style="width: 22px; height: 22px;">13</div><div class="cell grey dm" style="width: 22px; height: 22px;">14</div><div class="cell grey dm" style="width: 22px; height: 22px;">15</div><div class="rl">1</div><div class="cell grey src" style="width: 22px; height: 22px;">0</div><div class="cell grey dm" style="width: 22px; height: 22px;">1</div><div class="cell grey dm" style="width: 22px; height: 22px;">2</div><div class="cell grey dm" style="width: 22px; height: 22px;">3</div><div class="cell grey dm" style="width: 22px; height: 22px;">4</div><div class="cell grey dm" style="width: 22px; height: 22px;">5</div><div class="cell grey dm" style="width: 22px; height: 22px;">6</div><div class="cell grey dm" style="width: 22px; height: 22px;">7</div><div class="cell grey dm" style="width: 22px; height: 22px;">8</div><div class="cell grey dm" style="width: 22px; height: 22px;">9</div><div class="cell grey dm" style="width: 22px; height: 22px;">10</div><div class="cell grey dm" style="width: 22px; height: 22px;">11</div><div class="cell grey dm" style="width: 22px; height: 22px;">12</div><div class="cell grey dm" style="width: 22px; height: 22px;">13</div><div class="cell grey dm" style="width: 22px; height: 22px;">14</div><div class="cell grey dm" style="width: 22px; height: 22px;">15</div><div class="rl">2</div><div class="cell grey src" style="width: 22px; height: 22px;">0</div><div class="cell grey dm" style="width: 22px; height: 22px;">1</div><div class="cell grey dm" style="width: 22px; height: 22px;">2</div><div class="cell grey dm" style="width: 22px; height: 22px;">3</div><div class="cell grey dm" style="width: 22px; height: 22px;">4</div><div class="cell grey dm" style="width: 22px; height: 22px;">5</div><div class="cell grey dm" style="width: 22px; height: 22px;">6</div><div class="cell grey dm" style="width: 22px; height: 22px;">7</div><div class="cell grey dm" style="width: 22px; height: 22px;">8</div><div class="cell grey dm" style="width: 22px; height: 22px;">9</div><div class="cell grey dm" style="width: 22px; height: 22px;">10</div><div class="cell grey dm" style="width: 22px; height: 22px;">11</div><div class="cell grey dm" style="width: 22px; height: 22px;">12</div><div class="cell grey dm" style="width: 22px; height: 22px;">13</div><div class="cell grey dm" style="width: 22px; height: 22px;">14</div><div class="cell grey dm" style="width: 22px; height: 22px;">15</div><div class="rl">3</div><div class="cell grey src" style="width: 22px; height: 22px;">0</div><div class="cell grey dm" style="width: 22px; height: 22px;">1</div><div class="cell grey dm" style="width: 22px; height: 22px;">2</div><div class="cell grey dm" style="width: 22px; height: 22px;">3</div><div class="cell grey dm" style="width: 22px; height: 22px;">4</div><div class="cell grey dm" style="width: 22px; height: 22px;">5</div><div class="cell grey dm" style="width: 22px; height: 22px;">6</div><div class="cell grey dm" style="width: 22px; height: 22px;">7</div><div class="cell grey dm" style="width: 22px; height: 22px;">8</div><div class="cell grey dm" style="width: 22px; height: 22px;">9</div><div class="cell grey dm" style="width: 22px; height: 22px;">10</div><div class="cell grey dm" style="width: 22px; height: 22px;">11</div><div class="cell grey dm" style="width: 22px; height: 22px;">12</div><div class="cell grey dm" style="width: 22px; height: 22px;">13</div><div class="cell grey dm" style="width: 22px; height: 22px;">14</div><div class="cell grey dm" style="width: 22px; height: 22px;">15</div><div class="rl">4</div><div class="cell grey src" style="width: 22px; height: 22px;">0</div><div class="cell grey dm" style="width: 22px; height: 22px;">1</div><div class="cell grey dm" style="width: 22px; height: 22px;">2</div><div class="cell grey dm" style="width: 22px; height: 22px;">3</div><div class="cell grey dm" style="width: 22px; height: 22px;">4</div><div class="cell grey dm" style="width: 22px; height: 22px;">5</div><div class="cell grey dm" style="width: 22px; height: 22px;">6</div><div class="cell grey dm" style="width: 22px; height: 22px;">7</div><div class="cell grey dm" style="width: 22px; height: 22px;">8</div><div class="cell grey dm" style="width: 22px; height: 22px;">9</div><div class="cell grey dm" style="width: 22px; height: 22px;">10</div><div class="cell grey dm" style="width: 22px; height: 22px;">11</div><div class="cell grey dm" style="width: 22px; height: 22px;">12</div><div class="cell grey dm" style="width: 22px; height: 22px;">13</div><div class="cell grey dm" style="width: 22px; height: 22px;">14</div><div class="cell grey dm" style="width: 22px; height: 22px;">15</div><div class="rl">5</div><div class="cell grey src" style="width: 22px; height: 22px;">0</div><div class="cell grey dm" style="width: 22px; height: 22px;">1</div><div class="cell grey dm" style="width: 22px; height: 22px;">2</div><div class="cell grey dm" style="width: 22px; height: 22px;">3</div><div class="cell grey dm" style="width: 22px; height: 22px;">4</div><div class="cell grey dm" style="width: 22px; height: 22px;">5</div><div class="cell grey dm" style="width: 22px; height: 22px;">6</div><div class="cell grey dm" style="width: 22px; height: 22px;">7</div><div class="cell grey dm" style="width: 22px; height: 22px;">8</div><div class="cell grey dm" style="width: 22px; height: 22px;">9</div><div class="cell grey dm" style="width: 22px; height: 22px;">10</div><div class="cell grey dm" style="width: 22px; height: 22px;">11</div><div class="cell grey dm" style="width: 22px; height: 22px;">12</div><div class="cell grey dm" style="width: 22px; height: 22px;">13</div><div class="cell grey dm" style="width: 22px; height: 22px;">14</div><div class="cell grey dm" style="width: 22px; height: 22px;">15</div><div class="rl">6</div><div class="cell grey src" style="width: 22px; height: 22px;">0</div><div class="cell grey dm" style="width: 22px; height: 22px;">1</div><div class="cell grey dm" style="width: 22px; height: 22px;">2</div><div class="cell grey dm" style="width: 22px; height: 22px;">3</div><div class="cell grey dm" style="width: 22px; height: 22px;">4</div><div class="cell grey dm" style="width: 22px; height: 22px;">5</div><div class="cell grey dm" style="width: 22px; height: 22px;">6</div><div class="cell grey dm" style="width: 22px; height: 22px;">7</div><div class="cell grey dm" style="width: 22px; height: 22px;">8</div><div class="cell grey dm" style="width: 22px; height: 22px;">9</div><div class="cell grey dm" style="width: 22px; height: 22px;">10</div><div class="cell grey dm" style="width: 22px; height: 22px;">11</div><div class="cell grey dm" style="width: 22px; height: 22px;">12</div><div class="cell grey dm" style="width: 22px; height: 22px;">13</div><div class="cell grey dm" style="width: 22px; height: 22px;">14</div><div class="cell grey dm" style="width: 22px; height: 22px;">15</div><div class="rl">7</div><div class="cell grey src" style="width: 22px; height: 22px;">0</div><div class="cell grey dm" style="width: 22px; height: 22px;">1</div><div class="cell grey dm" style="width: 22px; height: 22px;">2</div><div class="cell grey dm" style="width: 22px; height: 22px;">3</div><div class="cell grey dm" style="width: 22px; height: 22px;">4</div><div class="cell grey dm" style="width: 22px; height: 22px;">5</div><div class="cell grey dm" style="width: 22px; height: 22px;">6</div><div class="cell grey dm" style="width: 22px; height: 22px;">7</div><div class="cell grey dm" style="width: 22px; height: 22px;">8</div><div class="cell grey dm" style="width: 22px; height: 22px;">9</div><div class="cell grey dm" style="width: 22px; height: 22px;">10</div><div class="cell grey dm" style="width: 22px; height: 22px;">11</div><div class="cell grey dm" style="width: 22px; height: 22px;">12</div><div class="cell grey dm" style="width: 22px; height: 22px;">13</div><div class="cell grey dm" style="width: 22px; height: 22px;">14</div><div class="cell grey dm" style="width: 22px; height: 22px;">15</div><div class="rl">8</div><div class="cell grey dm" style="width: 22px; height: 22px;">0</div><div class="cell grey dm" style="width: 22px; height: 22px;">1</div><div class="cell grey dm" style="width: 22px; height: 22px;">2</div><div class="cell grey dm" style="width: 22px; height: 22px;">3</div><div class="cell grey dm" style="width: 22px; height: 22px;">4</div><div class="cell grey dm" style="width: 22px; height: 22px;">5</div><div class="cell grey dm" style="width: 22px; height: 22px;">6</div><div class="cell grey dm" style="width: 22px; height: 22px;">7</div><div class="cell grey dm" style="width: 22px; height: 22px;">8</div><div class="cell grey dm" style="width: 22px; height: 22px;">9</div><div class="cell grey dm" style="width: 22px; height: 22px;">10</div><div class="cell grey dm" style="width: 22px; height: 22px;">11</div><div class="cell grey dm" style="width: 22px; height: 22px;">12</div><div class="cell grey dm" style="width: 22px; height: 22px;">13</div><div class="cell grey dm" style="width: 22px; height: 22px;">14</div><div class="cell grey dm" style="width: 22px; height: 22px;">15</div><div class="rl">9</div><div class="cell grey dm" style="width: 22px; height: 22px;">0</div><div class="cell grey dm" style="width: 22px; height: 22px;">1</div><div class="cell grey dm" style="width: 22px; height: 22px;">2</div><div class="cell grey dm" style="width: 22px; height: 22px;">3</div><div class="cell grey dm" style="width: 22px; height: 22px;">4</div><div class="cell grey dm" style="width: 22px; height: 22px;">5</div><div class="cell grey dm" style="width: 22px; height: 22px;">6</div><div class="cell grey dm" style="width: 22px; height: 22px;">7</div><div class="cell grey dm" style="width: 22px; height: 22px;">8</div><div class="cell grey dm" style="width: 22px; height: 22px;">9</div><div class="cell grey dm" style="width: 22px; height: 22px;">10</div><div class="cell grey dm" style="width: 22px; height: 22px;">11</div><div class="cell grey dm" style="width: 22px; height: 22px;">12</div><div class="cell grey dm" style="width: 22px; height: 22px;">13</div><div class="cell grey dm" style="width: 22px; height: 22px;">14</div><div class="cell grey dm" style="width: 22px; height: 22px;">15</div><div class="rl">10</div><div class="cell grey dm" style="width: 22px; height: 22px;">0</div><div class="cell grey dm" style="width: 22px; height: 22px;">1</div><div class="cell grey dm" style="width: 22px; height: 22px;">2</div><div class="cell grey dm" style="width: 22px; height: 22px;">3</div><div class="cell grey dm" style="width: 22px; height: 22px;">4</div><div class="cell grey dm" style="width: 22px; height: 22px;">5</div><div class="cell grey dm" style="width: 22px; height: 22px;">6</div><div class="cell grey dm" style="width: 22px; height: 22px;">7</div><div class="cell grey dm" style="width: 22px; height: 22px;">8</div><div class="cell grey dm" style="width: 22px; height: 22px;">9</div><div class="cell grey dm" style="width: 22px; height: 22px;">10</div><div class="cell grey dm" style="width: 22px; height: 22px;">11</div><div class="cell grey dm" style="width: 22px; height: 22px;">12</div><div class="cell grey dm" style="width: 22px; height: 22px;">13</div><div class="cell grey dm" style="width: 22px; height: 22px;">14</div><div class="cell grey dm" style="width: 22px; height: 22px;">15</div><div class="rl">11</div><div class="cell grey dm" style="width: 22px; height: 22px;">0</div><div class="cell grey dm" style="width: 22px; height: 22px;">1</div><div class="cell grey dm" style="width: 22px; height: 22px;">2</div><div class="cell grey dm" style="width: 22px; height: 22px;">3</div><div class="cell grey dm" style="width: 22px; height: 22px;">4</div><div class="cell grey dm" style="width: 22px; height: 22px;">5</div><div class="cell grey dm" style="width: 22px; height: 22px;">6</div><div class="cell grey dm" style="width: 22px; height: 22px;">7</div><div class="cell grey dm" style="width: 22px; height: 22px;">8</div><div class="cell grey dm" style="width: 22px; height: 22px;">9</div><div class="cell grey dm" style="width: 22px; height: 22px;">10</div><div class="cell grey dm" style="width: 22px; height: 22px;">11</div><div class="cell grey dm" style="width: 22px; height: 22px;">12</div><div class="cell grey dm" style="width: 22px; height: 22px;">13</div><div class="cell grey dm" style="width: 22px; height: 22px;">14</div><div class="cell grey dm" style="width: 22px; height: 22px;">15</div><div class="rl">12</div><div class="cell grey dm" style="width: 22px; height: 22px;">0</div><div class="cell grey dm" style="width: 22px; height: 22px;">1</div><div class="cell grey dm" style="width: 22px; height: 22px;">2</div><div class="cell grey dm" style="width: 22px; height: 22px;">3</div><div class="cell grey dm" style="width: 22px; height: 22px;">4</div><div class="cell grey dm" style="width: 22px; height: 22px;">5</div><div class="cell grey dm" style="width: 22px; height: 22px;">6</div><div class="cell grey dm" style="width: 22px; height: 22px;">7</div><div class="cell grey dm" style="width: 22px; height: 22px;">8</div><div class="cell grey dm" style="width: 22px; height: 22px;">9</div><div class="cell grey dm" style="width: 22px; height: 22px;">10</div><div class="cell grey dm" style="width: 22px; height: 22px;">11</div><div class="cell grey dm" style="width: 22px; height: 22px;">12</div><div class="cell grey dm" style="width: 22px; height: 22px;">13</div><div class="cell grey dm" style="width: 22px; height: 22px;">14</div><div class="cell grey dm" style="width: 22px; height: 22px;">15</div><div class="rl">13</div><div class="cell grey dm" style="width: 22px; height: 22px;">0</div><div class="cell grey dm" style="width: 22px; height: 22px;">1</div><div class="cell grey dm" style="width: 22px; height: 22px;">2</div><div class="cell grey dm" style="width: 22px; height: 22px;">3</div><div class="cell grey dm" style="width: 22px; height: 22px;">4</div><div class="cell grey dm" style="width: 22px; height: 22px;">5</div><div class="cell grey dm" style="width: 22px; height: 22px;">6</div><div class="cell grey dm" style="width: 22px; height: 22px;">7</div><div class="cell grey dm" style="width: 22px; height: 22px;">8</div><div class="cell grey dm" style="width: 22px; height: 22px;">9</div><div class="cell grey dm" style="width: 22px; height: 22px;">10</div><div class="cell grey dm" style="width: 22px; height: 22px;">11</div><div class="cell grey dm" style="width: 22px; height: 22px;">12</div><div class="cell grey dm" style="width: 22px; height: 22px;">13</div><div class="cell grey dm" style="width: 22px; height: 22px;">14</div><div class="cell grey dm" style="width: 22px; height: 22px;">15</div><div class="rl">14</div><div class="cell grey dm" style="width: 22px; height: 22px;">0</div><div class="cell grey dm" style="width: 22px; height: 22px;">1</div><div class="cell grey dm" style="width: 22px; height: 22px;">2</div><div class="cell grey dm" style="width: 22px; height: 22px;">3</div><div class="cell grey dm" style="width: 22px; height: 22px;">4</div><div class="cell grey dm" style="width: 22px; height: 22px;">5</div><div class="cell grey dm" style="width: 22px; height: 22px;">6</div><div class="cell grey dm" style="width: 22px; height: 22px;">7</div><div class="cell grey dm" style="width: 22px; height: 22px;">8</div><div class="cell grey dm" style="width: 22px; height: 22px;">9</div><div class="cell grey dm" style="width: 22px; height: 22px;">10</div><div class="cell grey dm" style="width: 22px; height: 22px;">11</div><div class="cell grey dm" style="width: 22px; height: 22px;">12</div><div class="cell grey dm" style="width: 22px; height: 22px;">13</div><div class="cell grey dm" style="width: 22px; height: 22px;">14</div><div class="cell grey dm" style="width: 22px; height: 22px;">15</div><div class="rl">15</div><div class="cell grey dm" style="width: 22px; height: 22px;">0</div><div class="cell grey dm" style="width: 22px; height: 22px;">1</div><div class="cell grey dm" style="width: 22px; height: 22px;">2</div><div class="cell grey dm" style="width: 22px; height: 22px;">3</div><div class="cell grey dm" style="width: 22px; height: 22px;">4</div><div class="cell grey dm" style="width: 22px; height: 22px;">5</div><div class="cell grey dm" style="width: 22px; height: 22px;">6</div><div class="cell grey dm" style="width: 22px; height: 22px;">7</div><div class="cell grey dm" style="width: 22px; height: 22px;">8</div><div class="cell grey dm" style="width: 22px; height: 22px;">9</div><div class="cell grey dm" style="width: 22px; height: 22px;">10</div><div class="cell grey dm" style="width: 22px; height: 22px;">11</div><div class="cell grey dm" style="width: 22px; height: 22px;">12</div><div class="cell grey dm" style="width: 22px; height: 22px;">13</div><div class="cell grey dm" style="width: 22px; height: 22px;">14</div><div class="cell grey dm" style="width: 22px; height: 22px;">15</div></div>
+      <svg class="tile-overlay" id="tov" width="0" height="0"><line x1="0" y1="0" x2="0" y2="0"></line><line x1="0" y1="0" x2="0" y2="0"></line><line x1="0" y1="0" x2="0" y2="0"></line><line x1="0" y1="0" x2="0" y2="0"></line><line x1="0" y1="0" x2="0" y2="0"></line></svg>
+    </div>
+  </div>
+  <div class="box">
+    <h2 id="rh">Tiled into 2 groups (16×8 each) + 128B Swizzle</h2>
+    <div id="rv"><div class="groups"><div class="group"><div class="group-label">g0</div><div class="grid" style="grid-template-columns: 20px repeat(8, 22px);"><div class="hdr"></div><div class="hdr">s0</div><div class="hdr">s1</div><div class="hdr">s2</div><div class="hdr">s3</div><div class="hdr">s4</div><div class="hdr">s5</div><div class="hdr">s6</div><div class="hdr">s7</div><div class="rl">0</div><div class="cell rd" style="width: 22px; height: 22px; background: rgb(91, 155, 213);">0</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(237, 154, 60);">1</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(217, 85, 85);">2</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(69, 181, 165);">3</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(95, 184, 95);">4</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(224, 184, 40);">5</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(157, 110, 181);">6</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(232, 120, 136);">7</div><div class="rl">1</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(91, 155, 213);">1</div><div class="cell rd" style="width: 22px; height: 22px; background: rgb(237, 154, 60);">0</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(217, 85, 85);">3</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(69, 181, 165);">2</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(95, 184, 95);">5</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(224, 184, 40);">4</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(157, 110, 181);">7</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(232, 120, 136);">6</div><div class="rl">2</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(91, 155, 213);">2</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(237, 154, 60);">3</div><div class="cell rd" style="width: 22px; height: 22px; background: rgb(217, 85, 85);">0</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(69, 181, 165);">1</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(95, 184, 95);">6</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(224, 184, 40);">7</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(157, 110, 181);">4</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(232, 120, 136);">5</div><div class="rl">3</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(91, 155, 213);">3</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(237, 154, 60);">2</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(217, 85, 85);">1</div><div class="cell rd" style="width: 22px; height: 22px; background: rgb(69, 181, 165);">0</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(95, 184, 95);">7</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(224, 184, 40);">6</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(157, 110, 181);">5</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(232, 120, 136);">4</div><div class="rl">4</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(91, 155, 213);">4</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(237, 154, 60);">5</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(217, 85, 85);">6</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(69, 181, 165);">7</div><div class="cell rd" style="width: 22px; height: 22px; background: rgb(95, 184, 95);">0</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(224, 184, 40);">1</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(157, 110, 181);">2</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(232, 120, 136);">3</div><div class="rl">5</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(91, 155, 213);">5</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(237, 154, 60);">4</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(217, 85, 85);">7</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(69, 181, 165);">6</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(95, 184, 95);">1</div><div class="cell rd" style="width: 22px; height: 22px; background: rgb(224, 184, 40);">0</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(157, 110, 181);">3</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(232, 120, 136);">2</div><div class="rl">6</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(91, 155, 213);">6</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(237, 154, 60);">7</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(217, 85, 85);">4</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(69, 181, 165);">5</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(95, 184, 95);">2</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(224, 184, 40);">3</div><div class="cell rd" style="width: 22px; height: 22px; background: rgb(157, 110, 181);">0</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(232, 120, 136);">1</div><div class="rl">7</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(91, 155, 213);">7</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(237, 154, 60);">6</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(217, 85, 85);">5</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(69, 181, 165);">4</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(95, 184, 95);">3</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(224, 184, 40);">2</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(157, 110, 181);">1</div><div class="cell rd" style="width: 22px; height: 22px; background: rgb(232, 120, 136);">0</div><div class="rl">8</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(91, 155, 213);">0</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(237, 154, 60);">1</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(217, 85, 85);">2</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(69, 181, 165);">3</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(95, 184, 95);">4</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(224, 184, 40);">5</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(157, 110, 181);">6</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(232, 120, 136);">7</div><div class="rl">9</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(91, 155, 213);">1</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(237, 154, 60);">0</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(217, 85, 85);">3</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(69, 181, 165);">2</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(95, 184, 95);">5</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(224, 184, 40);">4</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(157, 110, 181);">7</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(232, 120, 136);">6</div><div class="rl">10</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(91, 155, 213);">2</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(237, 154, 60);">3</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(217, 85, 85);">0</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(69, 181, 165);">1</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(95, 184, 95);">6</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(224, 184, 40);">7</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(157, 110, 181);">4</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(232, 120, 136);">5</div><div class="rl">11</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(91, 155, 213);">3</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(237, 154, 60);">2</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(217, 85, 85);">1</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(69, 181, 165);">0</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(95, 184, 95);">7</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(224, 184, 40);">6</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(157, 110, 181);">5</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(232, 120, 136);">4</div><div class="rl">12</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(91, 155, 213);">4</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(237, 154, 60);">5</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(217, 85, 85);">6</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(69, 181, 165);">7</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(95, 184, 95);">0</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(224, 184, 40);">1</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(157, 110, 181);">2</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(232, 120, 136);">3</div><div class="rl">13</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(91, 155, 213);">5</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(237, 154, 60);">4</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(217, 85, 85);">7</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(69, 181, 165);">6</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(95, 184, 95);">1</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(224, 184, 40);">0</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(157, 110, 181);">3</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(232, 120, 136);">2</div><div class="rl">14</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(91, 155, 213);">6</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(237, 154, 60);">7</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(217, 85, 85);">4</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(69, 181, 165);">5</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(95, 184, 95);">2</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(224, 184, 40);">3</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(157, 110, 181);">0</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(232, 120, 136);">1</div><div class="rl">15</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(91, 155, 213);">7</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(237, 154, 60);">6</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(217, 85, 85);">5</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(69, 181, 165);">4</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(95, 184, 95);">3</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(224, 184, 40);">2</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(157, 110, 181);">1</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(232, 120, 136);">0</div></div></div><div class="group"><div class="group-label">g1</div><div class="grid" style="grid-template-columns: repeat(8, 22px);"><div class="hdr">s0</div><div class="hdr">s1</div><div class="hdr">s2</div><div class="hdr">s3</div><div class="hdr">s4</div><div class="hdr">s5</div><div class="hdr">s6</div><div class="hdr">s7</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(91, 155, 213);">8</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(237, 154, 60);">9</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(217, 85, 85);">10</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(69, 181, 165);">11</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(95, 184, 95);">12</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(224, 184, 40);">13</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(157, 110, 181);">14</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(232, 120, 136);">15</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(91, 155, 213);">9</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(237, 154, 60);">8</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(217, 85, 85);">11</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(69, 181, 165);">10</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(95, 184, 95);">13</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(224, 184, 40);">12</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(157, 110, 181);">15</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(232, 120, 136);">14</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(91, 155, 213);">10</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(237, 154, 60);">11</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(217, 85, 85);">8</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(69, 181, 165);">9</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(95, 184, 95);">14</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(224, 184, 40);">15</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(157, 110, 181);">12</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(232, 120, 136);">13</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(91, 155, 213);">11</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(237, 154, 60);">10</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(217, 85, 85);">9</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(69, 181, 165);">8</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(95, 184, 95);">15</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(224, 184, 40);">14</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(157, 110, 181);">13</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(232, 120, 136);">12</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(91, 155, 213);">12</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(237, 154, 60);">13</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(217, 85, 85);">14</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(69, 181, 165);">15</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(95, 184, 95);">8</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(224, 184, 40);">9</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(157, 110, 181);">10</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(232, 120, 136);">11</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(91, 155, 213);">13</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(237, 154, 60);">12</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(217, 85, 85);">15</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(69, 181, 165);">14</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(95, 184, 95);">9</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(224, 184, 40);">8</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(157, 110, 181);">11</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(232, 120, 136);">10</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(91, 155, 213);">14</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(237, 154, 60);">15</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(217, 85, 85);">12</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(69, 181, 165);">13</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(95, 184, 95);">10</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(224, 184, 40);">11</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(157, 110, 181);">8</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(232, 120, 136);">9</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(91, 155, 213);">15</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(237, 154, 60);">14</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(217, 85, 85);">13</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(69, 181, 165);">12</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(95, 184, 95);">11</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(224, 184, 40);">10</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(157, 110, 181);">9</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(232, 120, 136);">8</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(91, 155, 213);">8</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(237, 154, 60);">9</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(217, 85, 85);">10</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(69, 181, 165);">11</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(95, 184, 95);">12</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(224, 184, 40);">13</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(157, 110, 181);">14</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(232, 120, 136);">15</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(91, 155, 213);">9</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(237, 154, 60);">8</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(217, 85, 85);">11</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(69, 181, 165);">10</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(95, 184, 95);">13</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(224, 184, 40);">12</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(157, 110, 181);">15</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(232, 120, 136);">14</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(91, 155, 213);">10</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(237, 154, 60);">11</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(217, 85, 85);">8</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(69, 181, 165);">9</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(95, 184, 95);">14</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(224, 184, 40);">15</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(157, 110, 181);">12</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(232, 120, 136);">13</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(91, 155, 213);">11</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(237, 154, 60);">10</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(217, 85, 85);">9</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(69, 181, 165);">8</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(95, 184, 95);">15</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(224, 184, 40);">14</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(157, 110, 181);">13</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(232, 120, 136);">12</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(91, 155, 213);">12</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(237, 154, 60);">13</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(217, 85, 85);">14</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(69, 181, 165);">15</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(95, 184, 95);">8</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(224, 184, 40);">9</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(157, 110, 181);">10</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(232, 120, 136);">11</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(91, 155, 213);">13</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(237, 154, 60);">12</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(217, 85, 85);">15</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(69, 181, 165);">14</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(95, 184, 95);">9</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(224, 184, 40);">8</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(157, 110, 181);">11</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(232, 120, 136);">10</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(91, 155, 213);">14</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(237, 154, 60);">15</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(217, 85, 85);">12</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(69, 181, 165);">13</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(95, 184, 95);">10</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(224, 184, 40);">11</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(157, 110, 181);">8</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(232, 120, 136);">9</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(91, 155, 213);">15</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(237, 154, 60);">14</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(217, 85, 85);">13</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(69, 181, 165);">12</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(95, 184, 95);">11</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(224, 184, 40);">10</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(157, 110, 181);">9</div><div class="cell dm" style="width: 22px; height: 22px; background: rgb(232, 120, 136);">8</div></div></div></div></div>
+  </div>
+</div>
+<div class="bottom-bar">
+  <div class="blab">Bank Sector Activity</div>
+  <div class="bbar" id="bb"><div class="bs ac" style="background: rgb(91, 155, 213);">S0</div><div class="bs ac" style="background: rgb(237, 154, 60);">S1</div><div class="bs ac" style="background: rgb(217, 85, 85);">S2</div><div class="bs ac" style="background: rgb(69, 181, 165);">S3</div><div class="bs ac" style="background: rgb(95, 184, 95);">S4</div><div class="bs ac" style="background: rgb(224, 184, 40);">S5</div><div class="bs ac" style="background: rgb(157, 110, 181);">S6</div><div class="bs ac" style="background: rgb(232, 120, 136);">S7</div></div>
+  <div class="st" id="stat"><span class="good">8/8 sectors → 1 cycle — conflict-free</span></div>
+</div>
+<div class="controls">
+  <div><span class="lbl">dtype</span>
+    <div class="bg" id="dt">
+      <button class="btn" data-v="1">f8</button>
+      <button class="btn on" data-v="2">f16</button>
+      <button class="btn" data-v="4">f32</button>
+    </div>
+  </div>
+  <div class="dtype-info" id="dtype-info"><span class="dtype-tag">Atom = 8 rows × 8 cols = 8 × 128B</span><span class="dtype-tag">1 cell = 8 f16</span><span class="dtype-tag">Atom = 8×64 f16</span><span class="dtype-tag">Col tile = 8×8 f16</span></div>
+</div>
+<div class="layout-box">
+  <div class="lcontent" id="lnotation">Layout for f16 Tensor : S[(16, 2, 64) : (64, 1024, 1)]</div>
+</div>
+<div class="formula-box">
+  <div class="ftitle" id="ftitle">(8 cols/row): Hardware treats each row as 8 elements for swizzle computation.</div>
+  <div class="fcontent" id="ffml">swizzle_col = col XOR (row // 1)  |  sector = (row % 1) × 8 + col</div>
+</div>
+<div class="leg" id="lg"><div class="leg-row"><div class="li"><div class="swtch" style="background: rgb(91, 155, 213);"></div>Sector 0</div><div class="li"><div class="swtch" style="background: rgb(237, 154, 60);"></div>Sector 1</div><div class="li"><div class="swtch" style="background: rgb(217, 85, 85);"></div>Sector 2</div><div class="li"><div class="swtch" style="background: rgb(69, 181, 165);"></div>Sector 3</div><div class="li"><div class="swtch" style="background: rgb(95, 184, 95);"></div>Sector 4</div><div class="li"><div class="swtch" style="background: rgb(224, 184, 40);"></div>Sector 5</div><div class="li"><div class="swtch" style="background: rgb(157, 110, 181);"></div>Sector 6</div><div class="li"><div class="swtch" style="background: rgb(232, 120, 136);"></div>Sector 7</div></div><div class="leg-row"><div class="li"><div class="swtch" style="background:var(--color-hover-bg);border:2.5px solid var(--accent)"></div> Source in original</div><div class="li"><div class="swtch brd"></div> Selected read in swizzled view</div><div class="li">Cell value = original column index</div><div class="li">g = group — each group is contiguous in memory</div></div></div>
+
+<script>
+const BK = ['#5b9bd5','#ed9a3c','#d95555','#45b5a5','#5fb85f','#e0b828','#9d6eb5','#e87888'];
+const SECS = 8, MROWS = 16, MCOLS = 16;
+const SZ = 22;
+const DTYPES = { 1: 'f8', 2: 'f16', 4: 'f32' };
+
+// atomCols = columns per atom, div = rows per sector group (8 / atomCols)
+const SWCFG = {
+  'none': { cols: 16, div: 1, groups: 1 },
+  '128':  { cols: 8,  div: 1, groups: 2 },
+  '64':   { cols: 4,  div: 2, groups: 4 },
+  '32':   { cols: 2,  div: 4, groups: 8 },
+  '16':   { cols: 1,  div: 8, groups: 16 },
+};
+
+const ST = { tile: true, sw: '128', col: 0, rr: 0, dsize: 2 };
+
+function updateDtype() {
+  const cfg = SWCFG[ST.sw];
+  const ac = cfg.cols;
+  const epc = 16 / ST.dsize;
+  const dn = DTYPES[ST.dsize];
+  const info = document.getElementById('dtype-info'); info.innerHTML = '';
+  const items = ST.sw === 'none' ? [
+    'No swizzle \u2014 no atom constraint',
+    '1 cell = ' + epc + ' ' + dn,
+  ] : [
+    'Atom = 8 rows \u00d7 ' + ac + ' cols = 8 \u00d7 ' + (ac * 16) + 'B',
+    '1 cell = ' + epc + ' ' + dn,
+    'Atom = 8\u00d7' + (ac * epc) + ' ' + dn,
+    'Col tile = 8\u00d7' + epc + ' ' + dn,
+  ];
+  for (const t of items) { const d = mk('span', 'dtype-tag'); d.textContent = t; info.appendChild(d); }
+}
+
+function draw() {
+  const cfg = SWCFG[ST.sw];
+  const tile = ST.tile;
+  const ac = cfg.cols;   // atom columns
+  const div = cfg.div;   // rows per sector group
+  const nGroups = tile ? cfg.groups : 1;
+  const groupCols = tile ? ac : MCOLS;
+  const rStart = ST.rr * 8, rEnd = rStart + 8;
+
+  updateDtype();
+
+  // Right header
+  const rh = document.getElementById('rh');
+  if (tile && ST.sw !== 'none') rh.textContent = 'Tiled into ' + nGroups + ' group' + (nGroups > 1 ? 's' : '') + ' (' + MROWS + '\u00d7' + groupCols + ' each) + ' + ST.sw + 'B Swizzle';
+  else if (tile) rh.textContent = 'Tiled (' + nGroups + ' group) \u2014 No Swizzle';
+  else if (ST.sw !== 'none') rh.textContent = 'Not Tiled + ' + ST.sw + 'B Swizzle';
+  else rh.textContent = 'Not Tiled, No Swizzle (identity)';
+
+  // Read set: selected column, selected row range
+  const selCol = ST.col;
+  const srcSet = new Set();
+  for (let r = rStart; r < rEnd; r++) srcSet.add(r + ',' + selCol);
+
+  // Left: original 16x16
+  const gl = document.getElementById('gl'); gl.innerHTML = '';
+  gl.style.gridTemplateColumns = '20px repeat(16,' + SZ + 'px)';
+  // Column headers
+  gl.appendChild(mk('div', 'hdr'));
+  for (let c = 0; c < MCOLS; c++) { const h = mk('div', 'hdr'); h.textContent = c; gl.appendChild(h); }
+  for (let r = 0; r < MROWS; r++) {
+    const l = mk('div', 'rl'); l.textContent = r; gl.appendChild(l);
+    for (let c = 0; c < MCOLS; c++) {
+      const d = mk('div', 'cell grey');
+      d.style.width = SZ + 'px'; d.style.height = SZ + 'px';
+      d.textContent = c;
+      if (srcSet.has(r + ',' + c)) d.classList.add('src');
+      else d.classList.add('dm');
+      gl.appendChild(d);
+    }
+  }
+
+  // Tile boundary overlay on left matrix
+  const tov = document.getElementById('tov');
+  tov.innerHTML = '';
+  if (tile && nGroups > 1) {
+    requestAnimationFrame(() => {
+      const wrap = document.getElementById('glw');
+      const wr = wrap.getBoundingClientRect();
+      const cells = gl.querySelectorAll('.cell');
+      if (cells.length < MCOLS * MROWS) return;
+      const first = cells[0].getBoundingClientRect();
+      const last = cells[MCOLS * MROWS - 1].getBoundingClientRect();
+      const x0 = first.left - wr.left;
+      const y0 = first.top - wr.top;
+      const x1 = last.right - wr.left;
+      const y1 = last.bottom - wr.top;
+      tov.setAttribute('width', wr.width);
+      tov.setAttribute('height', wr.height);
+      const ns = 'http://www.w3.org/2000/svg';
+      // Outer boundary
+      [[x0,y0,x1,y0],[x0,y1,x1,y1],[x0,y0,x0,y1],[x1,y0,x1,y1]].forEach(([lx1,ly1,lx2,ly2]) => {
+        const ln = document.createElementNS(ns, 'line');
+        ln.setAttribute('x1', lx1); ln.setAttribute('y1', ly1);
+        ln.setAttribute('x2', lx2); ln.setAttribute('y2', ly2);
+        tov.appendChild(ln);
+      });
+      // Internal dividing lines
+      for (let g = 1; g < nGroups; g++) {
+        const divCell = cells[ac * g - 1].getBoundingClientRect();
+        const xm = divCell.right - wr.left;
+        const ln = document.createElementNS(ns, 'line');
+        ln.setAttribute('x1', xm); ln.setAttribute('y1', y0);
+        ln.setAttribute('x2', xm); ln.setAttribute('y2', y1);
+        tov.appendChild(ln);
+      }
+    });
+  } else {
+    tov.setAttribute('width', 0);
+    tov.setAttribute('height', 0);
+  }
+
+  // Right: tiled groups
+  const rv = document.getElementById('rv'); rv.innerHTML = '';
+  const ab = new Map();
+
+  const groups = mk('div', 'groups');
+  for (let gi = 0; gi < nGroups; gi++) {
+    const gd = mk('div', 'group');
+    const gl2 = mk('div', 'group-label' + (nGroups <= 1 ? ' inv' : ''));
+    gl2.textContent = 'g' + gi;
+    gd.appendChild(gl2);
+    const grid = mk('div', 'grid');
+    const showRL = (gi === 0); // only leftmost group gets row labels
+    grid.style.gridTemplateColumns = (showRL ? '20px ' : '') + 'repeat(' + groupCols + ',' + SZ + 'px)';
+
+    if (showRL) grid.appendChild(mk('div', 'hdr'));
+    for (let p = 0; p < groupCols; p++) { const h = mk('div', 'hdr'); h.textContent = 's' + (p % SECS); grid.appendChild(h); }
+
+    for (let r = 0; r < MROWS; r++) {
+      if (showRL) { const rl = mk('div', 'rl'); rl.textContent = r; grid.appendChild(rl); }
+      for (let p = 0; p < groupCols; p++) {
+        const localRow = r % 8;
+
+        // Compute logical column and sector
+        let logCol, sec;
+        if (tile && ST.sw !== 'none') {
+          // Tiled + swizzle: swizzle within each atom group
+          const xorIdx = Math.floor(localRow / div);
+          logCol = p ^ xorIdx;
+          sec = (localRow % div) * ac + p;
+        } else if (!tile && ST.sw !== 'none') {
+          // Not tiled + swizzle: hardware sees full row width
+          // effectiveRow accounts for physical offset within swizzle period
+          const atomIdx = Math.floor(p / ac);
+          const localP = p % ac;
+          const effectiveRow = (r * (MCOLS / ac) + atomIdx) % 8;
+          const xorIdx = Math.floor(effectiveRow / div);
+          logCol = atomIdx * ac + (localP ^ xorIdx);
+          sec = (effectiveRow % div) * ac + localP;
+        } else {
+          // No swizzle: identity
+          logCol = p;
+          sec = p % SECS;
+        }
+
+        const d = mk('div', 'cell');
+        d.style.width = SZ + 'px'; d.style.height = SZ + 'px';
+        d.style.background = BK[sec % SECS];
+
+        // Original column this represents
+        const origCol = tile ? gi * groupCols + logCol : logCol;
+        d.textContent = origCol;
+
+        // Check if in read set
+        const isRead = srcSet.has(r + ',' + origCol);
+        if (isRead) {
+          d.classList.add('rd');
+          ab.set(sec % SECS, (ab.get(sec % SECS) || 0) + 1);
+        } else {
+          d.classList.add('dm');
+        }
+
+        grid.appendChild(d);
+      }
+    }
+    gd.appendChild(grid);
+    groups.appendChild(gd);
+  }
+  rv.appendChild(groups);
+
+  // Bank sector bar
+  const bb = document.getElementById('bb'); bb.innerHTML = '';
+  for (let b = 0; b < SECS; b++) {
+    const d = mk('div', 'bs'); d.style.background = BK[b]; const cnt = ab.get(b) || 0;
+    d.textContent = 'S' + b;
+    if (cnt > 1) { d.classList.add('ac', 'cf'); d.textContent = 'S' + b + '\u00d7' + cnt; }
+    else if (cnt > 0) d.classList.add('ac');
+    else d.classList.add('dm');
+    bb.appendChild(d);
+  }
+
+  // Status
+  const stat = document.getElementById('stat');
+  const maxConflict = ab.size > 0 ? Math.max(...ab.values()) : 0;
+  if (maxConflict <= 1 && ab.size > 0) {
+    stat.innerHTML = '<span class="good">' + ab.size + '/8 sectors \u2192 1 cycle \u2014 conflict-free</span>';
+  } else if (maxConflict > 1) {
+    stat.innerHTML = '<span class="bad">' + maxConflict + '-way conflict \u2192 ' + maxConflict + ' cycles</span>';
+  } else {
+    stat.innerHTML = '';
+  }
+
+  // Layout notation (dtype-dependent element counts)
+  const lnotation = document.getElementById('lnotation');
+  const epc = 16 / ST.dsize; // elements per cell
+  const dn = DTYPES[ST.dsize];
+  const totalCols = MCOLS * epc;
+  const groupElems = ac * epc;
+  if (!tile || nGroups <= 1) {
+    lnotation.textContent = 'Layout for ' + dn + ' Tensor : S[(' + MROWS + ', ' + totalCols + ') : (' + totalCols + ', 1)]';
+  } else {
+    const groupStride = MROWS * groupElems;
+    lnotation.textContent = 'Layout for ' + dn + ' Tensor : S[(' + MROWS + ', ' + nGroups + ', ' + groupElems + ') : (' + groupElems + ', ' + groupStride + ', 1)]';
+  }
+
+  // Formula
+  const ftitle = document.getElementById('ftitle');
+  const ffml = document.getElementById('ffml');
+  if (ST.sw === 'none') {
+    ftitle.textContent = 'No swizzle applied';
+    ffml.textContent = '';
+  } else if (tile) {
+    ftitle.textContent = '(' + ac + ' cols/row): Hardware treats each row as ' + ac + ' elements for swizzle computation.';
+    ffml.textContent = 'swizzle_col = col XOR (row // ' + div + ')  |  sector = (row % ' + div + ') \u00d7 ' + ac + ' + col';
+  } else {
+    const totalAtoms = Math.floor(MCOLS / ac);
+    ftitle.textContent = '(' + MCOLS + ' cols/row): Each original row is treated as ' + totalAtoms + ' rows of ' + ac + ' elements in swizzle computation.';
+    ffml.textContent = 'effective_row = (row \u00d7 ' + totalAtoms + ' + col // ' + ac + ') % 8  |  swizzle_col = col XOR (effective_row // ' + div + ')  |  sector = (effective_row % ' + div + ') \u00d7 ' + ac + ' + col';
+  }
+}
+
+function rebuildCols() {
+  const ig = document.getElementById('ci'); ig.innerHTML = '';
+  for (let i = 0; i < MCOLS; i++) {
+    const b = mk('button', 'btn' + (ST.col === i ? ' on' : '')); b.textContent = i;
+    b.onclick = (v => () => { ST.col = v; ig.querySelectorAll('.btn').forEach(x => x.classList.remove('on')); b.classList.add('on'); draw(); })(i);
+    ig.appendChild(b);
+  }
+}
+
+function mk(t, c) { const d = document.createElement(t); if (c) d.className = c; return d; }
+
+(function init() {
+  document.getElementById('tl').onclick = e => {
+    const b = e.target.closest('.btn'); if (!b) return;
+    ST.tile = b.dataset.v === '1';
+    document.querySelectorAll('#tl .btn').forEach(x => x.classList.remove('on')); b.classList.add('on');
+    draw();
+  };
+  document.getElementById('sw').onclick = e => {
+    const b = e.target.closest('.btn'); if (!b) return;
+    ST.sw = b.dataset.v;
+    document.querySelectorAll('#sw .btn').forEach(x => x.classList.remove('on')); b.classList.add('on');
+    draw();
+  };
+  document.getElementById('rr').onclick = e => {
+    const b = e.target.closest('.btn'); if (!b) return;
+    ST.rr = +b.dataset.v;
+    document.querySelectorAll('#rr .btn').forEach(x => x.classList.remove('on')); b.classList.add('on');
+    draw();
+  };
+  document.getElementById('dt').onclick = e => {
+    const b = e.target.closest('.btn'); if (!b) return;
+    ST.dsize = +b.dataset.v;
+    document.querySelectorAll('#dt .btn').forEach(x => x.classList.remove('on')); b.classList.add('on');
+    draw();
+  };
+  rebuildCols();
+
+  // Legend
+  const lg = document.getElementById('lg');
+  const r1 = mk('div', 'leg-row');
+  for (let i = 0; i < SECS; i++) { const d = mk('div', 'li'), w = mk('div', 'swtch'); w.style.background = BK[i]; d.appendChild(w); d.appendChild(document.createTextNode('Sector ' + i)); r1.appendChild(d); }
+  lg.appendChild(r1);
+  const r2 = mk('div', 'leg-row');
+  r2.appendChild(Object.assign(mk('div', 'li'), {innerHTML: '<div class="swtch" style="background:var(--color-hover-bg);border:2.5px solid var(--accent)"></div> Source in original'}));
+  r2.appendChild(Object.assign(mk('div', 'li'), {innerHTML: '<div class="swtch brd"></div> Selected read in swizzled view'}));
+  r2.appendChild(Object.assign(mk('div', 'li'), {textContent: 'Cell value = original column index'}));
+  r2.appendChild(Object.assign(mk('div', 'li'), {textContent: 'g = group \u2014 each group is contiguous in memory'}));
+  lg.appendChild(r2);
+
+  draw();
+})();
+</script>
+
+
+</body></html>
