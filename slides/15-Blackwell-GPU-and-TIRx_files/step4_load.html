@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<!-- saved from url=(0067)https://mlsyscourse.org/slides/tirx-gemm/demo/step4_load.html?embed -->
+<html lang="en" data-immersive-translate-page-theme="light"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Step 4: TMA Async Load</title>
+<link rel="stylesheet" href="./viz-base.css">
+<link rel="stylesheet" href="./code-highlight.css">
+<script src="./viz-base.js.下载"></script>
+<script src="./code-highlight.js.下载"></script>
+<style>
+  body { padding: 1.2rem 2.5rem; max-width: 1400px; margin: 0 auto; }
+
+  .diff-grid {
+    display: grid; grid-template-columns: 1fr 60px 1fr; gap: 0;
+    margin-bottom: 1.2rem;
+  }
+  .diff-col {
+    border-radius: 8px; overflow: hidden;
+    border: 1px solid var(--border); background: #1e1e2e;
+    display: flex; flex-direction: column;
+  }
+  .diff-header {
+    padding: 7px 14px; font-size: 13px; font-weight: 700;
+    text-align: center; letter-spacing: 0.02em;
+  }
+  .diff-header.old { background: rgba(239,68,68,0.18); color: #fca5a5; }
+  .diff-header.new { background: rgba(5,150,105,0.18); color: #6ee7b7; }
+  .diff-body {
+    padding: 12px 14px; font-family: 'SF Mono','Fira Code',monospace;
+    font-size: 12px; line-height: 1.8; color: #cdd6f4;
+    white-space: pre; overflow-x: auto; flex: 1;
+    max-height: 380px; overflow-y: auto;
+  }
+  .diff-body .del { background: rgba(239,68,68,0.15); display: block; padding: 0 2px; border-radius: 2px; }
+  .diff-body .add { background: rgba(5,150,105,0.15); display: block; padding: 0 2px; border-radius: 2px; }
+
+  .arrow-col {
+    display: flex; align-items: center; justify-content: center;
+  }
+  .arrow-col svg { width: 36px; height: 36px; }
+
+  .insights {
+    display: grid; grid-template-columns: repeat(3, 1fr);
+    gap: 1rem; margin-top: 1rem;
+  }
+  .insight {
+    padding: 0.8rem 1rem; border-radius: 8px;
+    font-size: 0.82rem; font-weight: 500; line-height: 1.5;
+    border-left: 4px solid; background: var(--surface);
+    border-top: 1px solid var(--border);
+    border-right: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+  .insight code {
+    font-family: 'SF Mono','Fira Code',monospace; font-size: 0.78rem;
+    background: rgba(0,0,0,0.06); padding: 0.1em 0.35em; border-radius: 3px;
+  }
+  .insight-blue   { border-left-color: #3b82f6; }
+  .insight-green  { border-left-color: #059669; }
+  .insight-orange { border-left-color: #d97706; }
+  .itag {
+    display: inline-block; font-size: 0.7rem; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.25rem;
+  }
+  .insight-blue   .itag { color: #3b82f6; }
+  .insight-green  .itag { color: #059669; }
+  .insight-orange .itag { color: #d97706; }
+
+  @media(max-width:700px) {
+    .diff-grid { grid-template-columns: 1fr; }
+    .arrow-col { transform: rotate(90deg); }
+    .insights { grid-template-columns: 1fr; }
+  }
+</style>
+<style data-id="immersive-translate-input-injected-css"></style></head>
+<body>
+
+<h1>Step 4: TMA Async Load</h1>
+<p class="sub">Key change: all-thread sync copy → single-thread TMA dispatch with barrier tracking</p>
+
+<div class="diff-grid">
+  <!-- Left: Step 3 (sync) -->
+  <div class="diff-col">
+    <div class="diff-header old">Step 3 — Sync Load (all 128 threads)</div>
+    <div class="diff-body code-dark" id="diff-old"><div><span class="cmt"># Every thread copies one row</span></div><div class="del"><span class="kw">with</span> Tx.<span class="fn">cta</span>():</div><div class="del">    Tx.<span class="fn">copy</span>(Asmem[:,:], A[m:m+<span class="num">128</span>, k:k+<span class="num">64</span>])</div><div class="del">    Tx.<span class="fn">copy</span>(Bsmem[:,:], B[n:n+<span class="num">128</span>, k:k+<span class="num">64</span>])</div><div class="del">Tx.cuda.<span class="fn">cta_sync</span>()</div><div>&nbsp;</div><div><span class="cmt"># All threads blocked until copy done</span></div><div><span class="cmt"># Then MMA proceeds...</span></div><div>Tx.ptx.tcgen05.fence.<span class="fn">after_thread_sync</span>()</div><div>Tx.<span class="fn">gemm_async</span>(tmem, Asmem, Bsmem, ...)</div><div>Tx.ptx.tcgen05.<span class="fn">commit</span>(mma_bar, ...)</div><div>Tx.ptx.mbarrier.<span class="fn">try_wait</span>(mma_bar, phase)</div><div>&nbsp;</div><div><span class="cmt"># Problem: 128 threads stalled on memory</span></div><div><span class="cmt"># → 99%+ time in data movement</span></div></div>
+  </div>
+
+  <!-- Arrow -->
+  <div class="arrow-col">
+    <svg viewBox="0 0 36 36"><polygon points="8,14 22,14 22,8 34,18 22,28 22,22 8,22" fill="#3b82f6" opacity="0.7"></polygon></svg>
+  </div>
+
+  <!-- Right: Step 4 (async) -->
+  <div class="diff-col">
+    <div class="diff-header new">Step 4 — TMA Async (single thread)</div>
+    <div class="diff-body code-dark" id="diff-new"><div><span class="cmt"># One thread dispatches HW DMA engine</span></div><div><span class="dec">@Tx.inline</span></div><div><span class="kw">def</span> <span class="fn">tma_load</span>(k_st):</div><div class="add">    tma_cfg = {<span class="str">"dispatch"</span>: <span class="str">"tma"</span>, <span class="str">"cta_group"</span>: <span class="num">1</span>,</div><div class="add">               <span class="str">"mbar"</span>: tma_bar.<span class="fn">ptr_to</span>([<span class="num">0</span>])}</div><div class="add">    Tx.<span class="fn">copy_async</span>(Asmem[:,:], A[m_st:m_st+<span class="num">128</span>, k_st:k_st+<span class="num">64</span>], **tma_cfg)</div><div class="add">    Tx.<span class="fn">copy_async</span>(Bsmem[:,:], B[n_st:n_st+<span class="num">128</span>, k_st:k_st+<span class="num">64</span>], **tma_cfg)</div><div class="add">    Tx.ptx.mbarrier.arrive.<span class="fn">expect_tx</span>(tma_bar.<span class="fn">ptr_to</span>([<span class="num">0</span>]), byte_count)</div><div>&nbsp;</div><div><span class="dec">@Tx.inline</span></div><div><span class="kw">def</span> <span class="fn">mma</span>(accum):</div><div class="add">    Tx.ptx.mbarrier.<span class="fn">try_wait</span>(tma_bar.<span class="fn">ptr_to</span>([<span class="num">0</span>]), phase_tma)</div><div class="add">    phase_tma = phase_tma ^ <span class="num">1</span></div><div class="add">    Tx.ptx.tcgen05.fence.<span class="fn">after_thread_sync</span>()</div><div>    Tx.<span class="fn">gemm_async</span>(tmem[:,:<span class="num">128</span>], Asmem[:,:], Bsmem[:,:],</div><div>                  accum=accum, dispatch=<span class="str">"tcgen05"</span>, cta_group=<span class="num">1</span>)</div><div>    Tx.ptx.tcgen05.<span class="fn">commit</span>(mma_bar.<span class="fn">ptr_to</span>([<span class="num">0</span>]), cta_group=<span class="num">1</span>)</div><div>    Tx.ptx.mbarrier.<span class="fn">try_wait</span>(mma_bar.<span class="fn">ptr_to</span>([<span class="num">0</span>]), phase_mma)</div><div>    phase_mma = phase_mma ^ <span class="num">1</span></div><div>&nbsp;</div><div><span class="cmt"># Single thread runs both:</span></div><div><span class="kw">with</span> Tx.<span class="fn">thread</span>(parent=<span class="str">"warpgroup"</span>)[tid == <span class="num">0</span>]:</div><div>    <span class="kw">for</span> k <span class="kw">in</span> <span class="kw">range</span>(K_TILES):</div><div>        <span class="fn">tma_load</span>(k * BLK_K)</div><div>        <span class="fn">mma</span>(k != <span class="num">0</span>)</div></div>
+  </div>
+</div>
+
+<div class="insights">
+  <div class="insight insight-blue">
+    <div class="itag">HW DMA</div>
+    <code>copy_async(dispatch="tma")</code> offloads to the TMA engine — 127 threads freed, memory bus saturated
+  </div>
+  <div class="insight insight-green">
+    <div class="itag">Barrier Sync</div>
+    <code>arrive.expect_tx(bytes)</code> tells barrier how many bytes TMA will write.
+    <code>try_wait(phase)</code> blocks until done. Phase flips each iteration.
+  </div>
+  <div class="insight insight-orange">
+    <div class="itag">Single Thread</div>
+    <code>tid == 0</code> issues both TMA load and MMA sequentially — no thread divergence overhead
+  </div>
+</div>
+
+<script>
+(function () {
+  var oldCode = String.raw`# Every thread copies one row
+with Tx.cta():
+    Tx.copy(Asmem[:,:], A[m:m+128, k:k+64])
+    Tx.copy(Bsmem[:,:], B[n:n+128, k:k+64])
+Tx.cuda.cta_sync()
+
+# All threads blocked until copy done
+# Then MMA proceeds...
+Tx.ptx.tcgen05.fence.after_thread_sync()
+Tx.gemm_async(tmem, Asmem, Bsmem, ...)
+Tx.ptx.tcgen05.commit(mma_bar, ...)
+Tx.ptx.mbarrier.try_wait(mma_bar, phase)
+
+# Problem: 128 threads stalled on memory
+# → 99%+ time in data movement`;
+
+  var newCode = String.raw`# One thread dispatches HW DMA engine
+@Tx.inline
+def tma_load(k_st):
+    tma_cfg = {"dispatch": "tma", "cta_group": 1,
+               "mbar": tma_bar.ptr_to([0])}
+    Tx.copy_async(Asmem[:,:], A[m_st:m_st+128, k_st:k_st+64], **tma_cfg)
+    Tx.copy_async(Bsmem[:,:], B[n_st:n_st+128, k_st:k_st+64], **tma_cfg)
+    Tx.ptx.mbarrier.arrive.expect_tx(tma_bar.ptr_to([0]), byte_count)
+
+@Tx.inline
+def mma(accum):
+    Tx.ptx.mbarrier.try_wait(tma_bar.ptr_to([0]), phase_tma)
+    phase_tma = phase_tma ^ 1
+    Tx.ptx.tcgen05.fence.after_thread_sync()
+    Tx.gemm_async(tmem[:,:128], Asmem[:,:], Bsmem[:,:],
+                  accum=accum, dispatch="tcgen05", cta_group=1)
+    Tx.ptx.tcgen05.commit(mma_bar.ptr_to([0]), cta_group=1)
+    Tx.ptx.mbarrier.try_wait(mma_bar.ptr_to([0]), phase_mma)
+    phase_mma = phase_mma ^ 1
+
+# Single thread runs both:
+with Tx.thread(parent="warpgroup")[tid == 0]:
+    for k in range(K_TILES):
+        tma_load(k * BLK_K)
+        mma(k != 0)`;
+
+  renderAnnotatedCode(document.getElementById('diff-old'), oldCode,
+    { 2: 'del', 3: 'del', 4: 'del', 5: 'del' });
+  renderAnnotatedCode(document.getElementById('diff-new'), newCode,
+    { 4: 'add', 5: 'add', 6: 'add', 7: 'add', 8: 'add', 12: 'add', 13: 'add', 14: 'add' });
+})();
+</script>
+
+
+</body></html>

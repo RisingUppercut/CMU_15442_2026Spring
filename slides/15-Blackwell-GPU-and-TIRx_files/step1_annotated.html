@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<!-- saved from url=(0072)https://mlsyscourse.org/slides/tirx-gemm/demo/step1_annotated.html?embed -->
+<html lang="en" data-immersive-translate-page-theme="light"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Step 1: Sync Load + MMA + Sync Store</title>
+<link rel="stylesheet" href="./viz-base.css">
+<link rel="stylesheet" href="./code-highlight.css">
+<script src="./viz-base.js.下载"></script>
+<script src="./code-highlight.js.下载"></script>
+<style>
+  body { padding: 2rem 2.5rem; max-width: 1400px; margin: 0 auto; }
+  header { margin-bottom: 1.5rem; }
+
+  .panels {
+    display: grid;
+    grid-template-columns: 55% 45%;
+    gap: 1.5rem;
+    align-items: start;
+  }
+
+  .panel {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .panel-title {
+    padding: 0.75rem 1rem;
+    font-weight: 600;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+    border-bottom: 1px solid var(--border);
+  }
+
+  /* Code panel */
+  #step1-code {
+    margin: 0;
+    font-size: 11.5px;
+    line-height: 1.7;
+    max-height: none;
+  }
+
+  /* Dataflow diagram */
+  .diagram-wrap { padding: 1.5rem 1rem; }
+  .flow {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+  }
+  .stage {
+    width: 140px;
+    padding: 0.5rem 0.6rem;
+    border-radius: var(--radius);
+    text-align: center;
+    font-size: 0.75rem;
+    font-weight: 600;
+    border: 2px solid var(--border);
+    background: var(--bg-elevated);
+    color: var(--text);
+    transition: all 0.4s ease;
+    cursor: pointer;
+  }
+  .stage.active {
+    transform: scale(1.08);
+    box-shadow: 0 0 18px rgba(96,165,250,0.4);
+  }
+  .stage.s-global  { border-color: #6b7280; }
+  .stage.s-smem    { border-color: #3b82f6; }
+  .stage.s-tmem    { border-color: #059669; }
+  .stage.s-reg     { border-color: #d97706; }
+  .stage.s-global2 { border-color: #ef4444; }
+
+  .stage.s-global.active  { background: rgba(107,114,128,0.25); border-color: #9ca3af; }
+  .stage.s-smem.active    { background: rgba(59,130,246,0.2);  border-color: #60a5fa; }
+  .stage.s-tmem.active    { background: rgba(5,150,105,0.2);   border-color: #34d399; }
+  .stage.s-reg.active     { background: rgba(217,119,6,0.2);   border-color: #fbbf24; }
+  .stage.s-global2.active { background: rgba(239,68,68,0.2);   border-color: #f87171; }
+
+  .arrow {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.2rem 0;
+  }
+  .arrow-line {
+    width: 2px;
+    height: 20px;
+    background: var(--border);
+    position: relative;
+    transition: background 0.4s ease;
+  }
+  .arrow-line::after {
+    content: '';
+    position: absolute;
+    bottom: -1px;
+    left: -4px;
+    border: 5px solid transparent;
+    border-top-color: var(--border);
+    transition: border-top-color 0.4s ease;
+  }
+  .arrow.active .arrow-line        { background: var(--accent); }
+  .arrow.active .arrow-line::after { border-top-color: var(--accent); }
+
+  .arrow-label {
+    font-size: 0.7rem;
+    font-family: var(--font-mono);
+    color: var(--text-muted);
+    white-space: nowrap;
+    transition: color 0.4s ease;
+  }
+  .arrow.a-blue .arrow-label   { color: #3b82f6; }
+  .arrow.a-green .arrow-label  { color: #059669; }
+  .arrow.a-orange .arrow-label { color: #d97706; }
+
+  .arrow.active.a-blue .arrow-line         { background: #3b82f6; }
+  .arrow.active.a-blue .arrow-line::after   { border-top-color: #3b82f6; }
+  .arrow.active.a-green .arrow-line        { background: #059669; }
+  .arrow.active.a-green .arrow-line::after  { border-top-color: #059669; }
+  .arrow.active.a-orange .arrow-line       { background: #d97706; }
+  .arrow.active.a-orange .arrow-line::after { border-top-color: #d97706; }
+
+</style>
+<style data-id="immersive-translate-input-injected-css"></style></head>
+<body>
+  <header>
+    <h1>Step 1: Sync Load + MMA + Sync Store</h1>
+    <p class="sub">The simplest working GEMM (128×128×64) — 0.1ms, 0.021 TFLOP/s</p>
+  </header>
+
+  <div class="panels">
+    <!-- LEFT: annotated code -->
+    <div class="panel">
+      <div class="panel-title">TIRx Kernel (~40 lines)</div>
+      <pre class="code-dark" id="step1-code"><div class="cb-region" data-region="setup" style="border-left-color:#6b7280"><div class="cb-line" data-ln="1"><span class="cmt"># Setup: SMEM + TMEM allocation</span></div><div class="cb-line" data-ln="2">pool = Tx.<span class="fn">PoolAllocator</span>(buf.data)</div><div class="cb-line" data-ln="3">Asmem = pool.<span class="fn">alloc</span>((<span class="num">128</span>,<span class="num">64</span>), <span class="str">"fp16"</span>, layout=A_layout)</div><div class="cb-line" data-ln="4">Bsmem = pool.<span class="fn">alloc</span>((<span class="num">128</span>,<span class="num">64</span>), <span class="str">"fp16"</span>, layout=B_layout)</div><div class="cb-line" data-ln="5">Tx.ptx.tcgen05.<span class="fn">alloc</span>(tmem_addr, n_cols=<span class="num">512</span>)</div><div class="cb-line" data-ln="6">Tx.ptx.mbarrier.<span class="fn">init</span>(mma_bar, <span class="num">1</span>)</div></div><div class="cb-region" data-region="load" style="border-left-color:#3b82f6"><div class="cb-line" data-ln="8"><span class="cmt"># Load: all threads copy global → shared</span></div><div class="cb-line" data-ln="9"><span class="kw">with</span> Tx.<span class="fn">cta</span>():</div><div class="cb-line" data-ln="10">    Tx.<span class="fn">copy</span>(Asmem[:,:], A[m_st:m_st+<span class="num">128</span>, k_st:k_st+<span class="num">64</span>])</div><div class="cb-line" data-ln="11">    Tx.<span class="fn">copy</span>(Bsmem[:,:], B[n_st:n_st+<span class="num">128</span>, k_st:k_st+<span class="num">64</span>])</div><div class="cb-line" data-ln="12">Tx.cuda.<span class="fn">cta_sync</span>()</div></div><div class="cb-region" data-region="compute" style="border-left-color:#059669"><div class="cb-line" data-ln="14"><span class="cmt"># Compute: single thread issues MMA</span></div><div class="cb-line" data-ln="15"><span class="kw">with</span> Tx.<span class="fn">thread</span>()[Tx.ptx.<span class="fn">elect_sync</span>()]:</div><div class="cb-line" data-ln="16">    Tx.<span class="fn">gemm_async</span>(tmem[:,:<span class="num">128</span>], Asmem[:,:], Bsmem[:,:],</div><div class="cb-line" data-ln="17">                  accum=k!=<span class="num">0</span>, dispatch=<span class="str">"tcgen05"</span>, cta_group=<span class="num">1</span>)</div><div class="cb-line" data-ln="18">    Tx.ptx.tcgen05.<span class="fn">commit</span>(mma_bar, cta_group=<span class="num">1</span>)</div><div class="cb-line" data-ln="19">Tx.ptx.mbarrier.<span class="fn">try_wait</span>(mma_bar, phase)</div></div><div class="cb-region" data-region="write" style="border-left-color:#d97706"><div class="cb-line" data-ln="21"><span class="cmt"># Writeback: TMEM → registers → global</span></div><div class="cb-line" data-ln="22"><span class="kw">with</span> Tx.<span class="fn">warpgroup</span>():</div><div class="cb-line" data-ln="23">    Tx.<span class="fn">copy</span>(Dreg_wg[:,:], tmem[:,:<span class="num">128</span>])    <span class="cmt"># tcgen05.ld</span></div><div class="cb-line" data-ln="24"><span class="kw">with</span> Tx.<span class="fn">thread</span>():</div><div class="cb-line" data-ln="25">    Tx.<span class="fn">cast</span>(Dreg_f16[:], Dreg[:])          <span class="cmt"># fp32 → fp16</span></div><div class="cb-line" data-ln="26">    Tx.<span class="fn">copy</span>(D[m,n:n+<span class="num">128</span>], Dreg_f16[:])     <span class="cmt"># store</span></div></div></pre>
+    </div>
+
+    <!-- RIGHT: dataflow diagram -->
+    <div class="panel">
+      <div class="panel-title">Dataflow</div>
+      <div class="diagram-wrap">
+        <div class="flow">
+          <div class="stage s-global" data-step="0" data-block="load">Global Mem</div>
+          <div class="arrow a-blue" data-step="0" data-block="load">
+            <div class="arrow-line"></div>
+            <div class="arrow-label">Tx.copy</div>
+          </div>
+          <div class="stage s-smem" data-step="1" data-block="load">SMEM</div>
+          <div class="arrow a-green" data-step="1" data-block="compute">
+            <div class="arrow-line"></div>
+            <div class="arrow-label">gemm_async</div>
+          </div>
+          <div class="stage s-tmem" data-step="2" data-block="compute">TMEM</div>
+          <div class="arrow a-green" data-step="2" data-block="write">
+            <div class="arrow-line"></div>
+            <div class="arrow-label">tcgen05.ld</div>
+          </div>
+          <div class="stage s-reg" data-step="3" data-block="write">Registers</div>
+          <div class="arrow a-orange" data-step="3" data-block="write">
+            <div class="arrow-line"></div>
+            <div class="arrow-label">cast+store</div>
+          </div>
+          <div class="stage s-global2" data-step="4" data-block="write">Global Mem</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+<script>
+(function () {
+  var code = String.raw`# Setup: SMEM + TMEM allocation
+pool = Tx.PoolAllocator(buf.data)
+Asmem = pool.alloc((128,64), "fp16", layout=A_layout)
+Bsmem = pool.alloc((128,64), "fp16", layout=B_layout)
+Tx.ptx.tcgen05.alloc(tmem_addr, n_cols=512)
+Tx.ptx.mbarrier.init(mma_bar, 1)
+
+# Load: all threads copy global → shared
+with Tx.cta():
+    Tx.copy(Asmem[:,:], A[m_st:m_st+128, k_st:k_st+64])
+    Tx.copy(Bsmem[:,:], B[n_st:n_st+128, k_st:k_st+64])
+Tx.cuda.cta_sync()
+
+# Compute: single thread issues MMA
+with Tx.thread()[Tx.ptx.elect_sync()]:
+    Tx.gemm_async(tmem[:,:128], Asmem[:,:], Bsmem[:,:],
+                  accum=k!=0, dispatch="tcgen05", cta_group=1)
+    Tx.ptx.tcgen05.commit(mma_bar, cta_group=1)
+Tx.ptx.mbarrier.try_wait(mma_bar, phase)
+
+# Writeback: TMEM → registers → global
+with Tx.warpgroup():
+    Tx.copy(Dreg_wg[:,:], tmem[:,:128])    # tcgen05.ld
+with Tx.thread():
+    Tx.cast(Dreg_f16[:], Dreg[:])          # fp32 → fp16
+    Tx.copy(D[m,n:n+128], Dreg_f16[:])     # store`;
+
+  // Bidirectional mapping: code blocks ↔ dataflow steps
+  var blockToSteps = {
+    setup:   [],
+    load:    [0, 1],
+    compute: [1, 2],
+    write:   [2, 3, 4]
+  };
+  var stepToBlock = { 0: 'load', 1: 'load', 2: 'compute', 3: 'write', 4: 'write' };
+
+  var codeEl = document.getElementById('step1-code');
+  var syncing = false;  // prevent infinite loops
+
+  createCodeBlock(codeEl, code, {
+    blockDefs: [
+      { key: 'setup',   start: 1,  end: 6,  color: '#6b7280' },
+      { key: 'load',    start: 8,  end: 12, color: '#3b82f6' },
+      { key: 'compute', start: 14, end: 19, color: '#059669' },
+      { key: 'write',   start: 21, end: 26, color: '#d97706' }
+    ],
+    onBlockClick: function (key) {
+      if (syncing) return;
+      syncing = true;
+      stopAnimation();
+      highlightStagesForBlock(key);
+      syncing = false;
+    }
+  });
+
+  var stages = document.querySelectorAll('.stage');
+  var arrows = document.querySelectorAll('.arrow');
+  var flowEls = document.querySelectorAll('.stage, .arrow');
+  // Highlight dataflow stages/arrows that match a code block
+  function highlightStagesForBlock(blockKey) {
+    stages.forEach(function (s) { s.classList.remove('active'); });
+    arrows.forEach(function (a) { a.classList.remove('active'); });
+    var steps = blockToSteps[blockKey];
+    if (!steps) return;
+    flowEls.forEach(function (el) {
+      var s = parseInt(el.dataset.step);
+      if (steps.indexOf(s) !== -1) el.classList.add('active');
+    });
+  }
+
+  // Highlight code block that matches a dataflow element
+  function focusCodeBlock(key) {
+    if (!key) {
+      // clear code highlights
+      codeEl.querySelectorAll('.cb-region').forEach(function (r) {
+        r.classList.remove('active');
+        r.style.background = '';
+      });
+      return;
+    }
+    var target = codeEl.querySelector('.cb-region[data-region="' + key + '"]');
+    if (target) {
+      syncing = true;
+      target.click();
+      syncing = false;
+    }
+  }
+
+  // Click on right-side stages/arrows → sync left
+  flowEls.forEach(function (el) {
+    el.addEventListener('click', function () {
+      if (syncing) return;
+      stopAnimation();
+      var blockKey = el.dataset.block;
+      if (!blockKey) return;
+      syncing = true;
+      // Highlight matching stages
+      highlightStagesForBlock(blockKey);
+      // Highlight matching code block
+      focusCodeBlock(blockKey);
+      syncing = false;
+    });
+  });
+
+  function clearAll() {
+    stages.forEach(function (s) { s.classList.remove('active'); });
+    arrows.forEach(function (a) { a.classList.remove('active'); });
+    focusCodeBlock(null);
+  }
+
+  function stopAnimation() {}
+})();
+</script>
+
+
+</body></html>

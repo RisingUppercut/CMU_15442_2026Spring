@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<!-- saved from url=(0073)https://mlsyscourse.org/slides/tirx-gemm/demo/step9_motivation.html?embed -->
+<html lang="en" data-immersive-translate-page-theme="light"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Why Cluster?</title>
+<link rel="stylesheet" href="./viz-base.css">
+<link rel="stylesheet" href="./code-highlight.css">
+<script src="./viz-base.js.下载"></script>
+<style>
+  body { padding: 24px 20px; }
+
+  .panels { grid-template-columns: 1fr 1fr; gap: 24px; }
+
+  .panel { padding: 20px; }
+  .panel h2 { font-size: 15px; margin-bottom: 12px; letter-spacing: .3px; }
+  .panel.dim h2 { color: #94a3b8; }
+  .panel.bright h2 { color: #16a34a; }
+
+  .diagram { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+
+  /* SMEM container */
+  .smem-box {
+    border: 2px solid var(--border); border-radius: 8px; padding: 10px 14px;
+    display: flex; gap: 10px; align-items: center; justify-content: center;
+    background: var(--surface); position: relative;
+  }
+  .smem-label {
+    position: absolute; top: -9px; left: 12px; background: var(--surface);
+    font-size: 11px; font-weight: 700; color: var(--dim); padding: 0 4px;
+    letter-spacing: .5px;
+  }
+  .tile {
+    border-radius: 5px; display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 700; color: #fff; padding: 8px 10px;
+    white-space: nowrap; min-width: 80px; text-align: center;
+  }
+  .tile.a { background: #3b82f6; }
+  .tile.b { background: #22c55e; }
+  .tile.a.dim-tile { background: #93b8f4; }
+  .tile.b.dim-tile { background: #7edba2; }
+
+  /* Arrows */
+  .arrow { display: flex; flex-direction: column; align-items: center; color: var(--dim); }
+  .arrow::before { content: ''; display: block; width: 2px; height: 18px; background: var(--dim); }
+  .arrow::after { content: ''; display: block; width: 0; height: 0;
+    border-left: 6px solid transparent; border-right: 6px solid transparent;
+    border-top: 8px solid var(--dim); }
+
+  /* MMA box */
+  .mma-box {
+    background: #f8fafc; border: 2px solid var(--border); border-radius: 8px;
+    padding: 8px 18px; font-size: 13px; font-weight: 700; text-align: center;
+  }
+
+  /* Stats */
+  .stats { display: flex; flex-direction: column; gap: 4px; align-items: center; margin-top: 4px; }
+  .stat { font-size: 13px; color: var(--text); font-family: 'SF Mono','Fira Code',monospace; }
+  .stat .num { font-weight: 800; font-size: 15px; }
+  .stat-label { font-size: 11px; color: var(--dim); }
+
+  .intensity { display: inline-flex; align-items: center; gap: 8px; }
+  .intensity .num { color: var(--text); }
+  .badge {
+    background: #16a34a; color: #fff; font-size: 13px; font-weight: 800;
+    padding: 2px 8px; border-radius: 5px;
+  }
+
+  /* Two-CTA side by side SMEM */
+  .smem-pair { display: flex; gap: 10px; align-items: stretch; }
+  .smem-pair .smem-box { flex: 1; }
+
+  /* Arrow merge for 2-CTA */
+  .arrow-merge { display: flex; align-items: flex-start; justify-content: center; gap: 60px; position: relative; height: 36px; }
+  .arrow-merge::before {
+    content: ''; position: absolute; top: 18px; left: calc(50% - 50px); width: 100px;
+    height: 2px; background: var(--dim);
+  }
+  .arrow-merge .arm { display: flex; flex-direction: column; align-items: center; }
+  .arrow-merge .arm::before { content: ''; display: block; width: 2px; height: 18px; background: var(--dim); }
+  .arrow-merge-tip {
+    display: flex; flex-direction: column; align-items: center; margin-top: -2px;
+  }
+  .arrow-merge-tip::before { content: ''; display: block; width: 2px; height: 10px; background: var(--dim); }
+  .arrow-merge-tip::after { content: ''; display: block; width: 0; height: 0;
+    border-left: 6px solid transparent; border-right: 6px solid transparent;
+    border-top: 8px solid var(--dim); }
+
+  /* Summary bar */
+  .summary {
+    max-width: 1100px; margin: 20px auto 0; display: grid; grid-template-columns: 1fr 1fr 1fr;
+    gap: 16px;
+  }
+  .summary-item {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 14px 16px; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,.06);
+  }
+  .summary-item .si-title {
+    font-size: 16px; font-weight: 800; margin-bottom: 4px;
+  }
+  .summary-item:nth-child(1) .si-title { color: var(--accent); }
+  .summary-item:nth-child(2) .si-title { color: #f59e0b; }
+  .summary-item:nth-child(3) .si-title { color: #16a34a; }
+  .summary-item .si-desc { font-size: 12px; color: var(--dim); }
+
+  .panel.dim { border-color: #e2e8f0; }
+  .panel.bright { border-color: #bbf7d0; }
+
+  @media(max-width:700px) {
+    .summary { grid-template-columns: 1fr; }
+    .smem-pair { flex-direction: column; }
+  }
+</style>
+<style data-id="immersive-translate-input-injected-css"></style></head>
+<body>
+<h1>Why Cluster?</h1>
+<p class="sub">Double arithmetic intensity with the same memory bandwidth</p>
+
+<div class="panels">
+  <!-- LEFT: 1-CTA -->
+  <div class="panel dim">
+    <h2>1 CTA (Step 8)</h2>
+    <div class="diagram">
+      <div class="smem-box">
+        <span class="smem-label">SMEM</span>
+        <div class="tile a dim-tile">A<sub>smem</sub><br>128×64</div>
+        <div class="tile b dim-tile">B<sub>smem</sub><br>128×64</div>
+      </div>
+      <div class="arrow"></div>
+      <div class="mma-box">MMA</div>
+      <div class="stats">
+        <div class="stat">Output: <span class="num">128 × 128 = 16,384</span> results</div>
+        <div class="stat-label">Data loaded: (128×64 + 128×64) × 2B = <strong>32 KB</strong></div>
+        <div class="stat intensity">Arithmetic Intensity: <span class="num">512 FMA/KB</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT: 2-CTA -->
+  <div class="panel bright">
+    <h2>2 CTAs (Step 9)</h2>
+    <div class="diagram">
+      <div class="smem-pair">
+        <div class="smem-box">
+          <span class="smem-label">CTA-0</span>
+          <div class="tile a">A₀<br>128×64</div>
+          <div class="tile b">B₀<br>128×64</div>
+        </div>
+        <div class="smem-box">
+          <span class="smem-label">CTA-1</span>
+          <div class="tile a">A₁<br>128×64</div>
+          <div class="tile b">B₁<br>128×64</div>
+        </div>
+      </div>
+      <div class="arrow-merge">
+        <div class="arm"></div>
+        <div class="arm"></div>
+      </div>
+      <div class="arrow-merge-tip"></div>
+      <div class="mma-box" style="border-color:#16a34a;">Cooperative MMA</div>
+      <div class="stats">
+        <div class="stat">Output: <span class="num">256 × 256 = 65,536</span> results</div>
+        <div class="stat-label">Data loaded: 2 × (128×64 + 128×64) × 2B = <strong>64 KB</strong></div>
+        <div class="stat intensity">Arithmetic Intensity: <span class="num" style="color:#16a34a;">1024 FMA/KB</span> <span class="badge">2×</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Summary bar -->
+<div class="summary">
+  <div class="summary-item">
+    <div class="si-title">Same bandwidth</div>
+    <div class="si-desc">Each CTA still loads one A tile + one B tile</div>
+  </div>
+  <div class="summary-item">
+    <div class="si-title">4× computation</div>
+    <div class="si-desc">MMA output grows from 128² to 256²</div>
+  </div>
+  <div class="summary-item">
+    <div class="si-title">2× arithmetic intensity</div>
+    <div class="si-desc">More compute per byte transferred</div>
+  </div>
+</div>
+
+
+
+</body></html>

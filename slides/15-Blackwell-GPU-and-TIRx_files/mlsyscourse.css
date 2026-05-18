@@ -1,0 +1,147 @@
+/* CMU PPTX template styles for reveal.js slides
+ * Template: 15-442/642 Machine Learning Systems
+ * Lecture: Blackwell GPU Architecture
+ * Colors: title=#8B1514 (CMU red)
+ * Fonts: Arial (body+heading), Monaco (code)
+ */
+
+:root {
+  --title-red: #8B1514;
+  --black: #000000;
+  --gray: #4D4F53;
+  --dim: #D9D9D9;
+}
+
+.reveal { font-family: Arial, Helvetica, sans-serif; color: var(--black); }
+
+/* Content slides: padding mimics PPTX placeholder margins */
+.reveal .slides section {
+  text-align: left;
+  padding: 37px 82px 20px 82px;
+  box-sizing: border-box;
+  top: 0 !important;
+}
+
+/* Title: 32pt dark red, not bold (matches PPTX master titleStyle) */
+.reveal h1, .reveal h2, .reveal h3 {
+  color: var(--title-red); font-weight: normal; text-transform: none;
+}
+.reveal h2 { font-size: 1.35em; margin: 0 0 0.5em 0; }
+.reveal h3 { font-size: 1.35em; margin: 0 0 0.5em 0; }
+
+/* Body: 24pt black, bullet, 90% line spacing */
+.reveal p { color: var(--black); font-size: 0.7em !important; line-height: 1.55; margin: 0 0 0.15em 0; }
+.reveal li { color: var(--black); font-size: 0.7em; line-height: 1.55; }
+.reveal ul { list-style-type: "\2022  "; padding-left: 1em; margin: 0; }
+.reveal li { margin-bottom: 0.15em; }
+
+/* Code */
+.reveal code {
+  font-family: Monaco, 'Courier New', monospace;
+  color: var(--black); font-size: 1em;
+  background: none; white-space: normal;
+}
+.reveal pre { text-align: left; margin: 0.4em 0; }
+.reveal pre code { background: none; padding: 0; display: block; line-height: 1.55; }
+
+.reveal strong { color: var(--black); }
+
+/* Images */
+.reveal section img {
+  max-width: 100%; height: auto;
+  display: block; margin: 0.5em auto;
+}
+
+/* Title slide — matches CMU PPTX template */
+.reveal .title-slide {
+  text-align: center !important;
+  display: flex !important; flex-direction: column;
+  justify-content: center; align-items: center;
+  padding: 0 82px !important;
+  height: 720px !important;
+  top: 0 !important;
+}
+.reveal .title-slide .main-title {
+  font-size: 1.05em !important; font-weight: 700; color: var(--title-red);
+  margin: 0; line-height: 1.2;
+}
+.reveal .title-slide .lecture-title {
+  font-size: 1.05em !important; font-weight: 700; color: var(--title-red);
+  margin: 0.9em 0 0 0; line-height: 1.2;
+}
+.reveal .title-slide .info {
+  font-size: 0.6em; color: var(--gray); margin-top: 2.5em; line-height: 1.8;
+}
+
+/* Outline/section transition slide */
+.reveal .outline-slide .outline-items {
+  list-style: none; padding: 0; margin: 0;
+}
+.reveal .outline-slide .outline-items li {
+  font-size: 0.7em; line-height: 1.55; margin-bottom: 0.6em;
+  color: var(--black);
+}
+.reveal .outline-slide .outline-items li.dim {
+  color: var(--dim);
+}
+
+/* Demo slides */
+.reveal .demo-slide {
+  padding: 37px 42px 0 42px !important;
+  overflow: hidden;
+}
+.reveal .demo-slide h2 {
+  font-size: 1.35em; margin: 0 0 0.3em 0;
+}
+.reveal .demo-slide .iframe-wrap {
+  position: relative;
+  width: 1116px; height: 610px;
+  overflow-x: hidden; overflow-y: auto;
+}
+.reveal .demo-slide iframe {
+  max-width: none !important;
+  max-height: none !important;
+  border: none;
+  position: absolute;
+  width: 1600px; height: 1100px;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%) scale(0.70);
+  transform-origin: top center;
+}
+
+/* Draw placeholder — shows prompt until visual is ready */
+.reveal .draw-placeholder {
+  border: 2px dashed var(--dim);
+  border-radius: 8px;
+  padding: 1.5em 2em;
+  margin: 0.5em 0;
+  color: var(--gray);
+  font-size: 0.6em;
+  line-height: 1.6;
+  font-style: italic;
+  text-align: center;
+}
+
+/* Draw iframe wrap — inline figure within a text slide */
+.reveal .draw-wrap {
+  position: relative;
+  width: 1036px; height: 200px;
+  overflow: hidden;
+  margin: 0.3em 0;
+}
+.reveal .draw-wrap iframe {
+  max-width: none !important;
+  max-height: none !important;
+  border: none;
+  position: absolute;
+  width: 1600px; height: 900px;
+  top: 0;
+}
+
+/* Footnote — pinned to bottom-left of slide */
+.reveal .footnote {
+  position: absolute; bottom: 16px; left: 82px;
+  font-size: 0.45em; color: var(--gray); line-height: 1.5;
+  z-index: 10;
+}

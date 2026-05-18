@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<!-- saved from url=(0072)https://mlsyscourse.org/slides/tirx-gemm/demo/step7_principle.html?embed -->
+<html lang="en" data-immersive-translate-page-theme="light"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Step 7: Warp Specialization Principle</title>
+<link rel="stylesheet" href="./viz-base.css">
+<script src="./viz-base.js.下载"></script>
+<style>
+  body { padding: 20px 28px; max-width: 1100px; margin: 0 auto; }
+
+  /* ── Timeline Section ── */
+  .tl-wrap {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 14px 16px;
+    box-shadow: 0 1px 3px rgba(0,0,0,.06); margin-bottom: 12px;
+  }
+  .tl-head {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 8px;
+  }
+  .badge {
+    font-size: 12px; font-weight: 700; padding: 3px 10px;
+    border-radius: 4px; letter-spacing: .02em;
+  }
+  .badge.red { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
+  .badge.grn { background: #f0fdf4; color: #16a34a; border: 1px solid #bbf7d0; }
+  .time-arrow { font-size: 10px; color: var(--dim); font-weight: 600; letter-spacing: .05em; }
+
+  /* Timeline grid */
+  .tl-grid { display: grid; gap: 2px; align-items: stretch; }
+  .tl-lbl {
+    font-size: 10px; font-weight: 600; color: var(--dim);
+    display: flex; flex-direction: column; align-items: flex-end;
+    justify-content: center; padding-right: 8px; line-height: 1.35;
+    font-family: 'SF Mono','Fira Code',monospace;
+  }
+  .tl-lbl small { font-weight: 500; font-size: 9px; color: #aaa; }
+
+  /* Timeline blocks */
+  .blk {
+    height: 40px; border-radius: 5px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 600; color: #fff;
+    cursor: pointer; transition: all .15s ease; user-select: none;
+    min-width: 0; overflow: hidden; white-space: nowrap;
+  }
+  .blk:hover { filter: brightness(1.12); transform: translateY(-1px); box-shadow: 0 2px 8px rgba(0,0,0,.15); z-index: 2; }
+  .blk.hl { box-shadow: 0 0 0 2.5px #1e293b, 0 2px 8px rgba(0,0,0,.2); z-index: 3; transform: translateY(-1px); filter: brightness(1.15); }
+  .blk.tma { background: #3b82f6; }
+  .blk.mma { background: #10b981; }
+  .blk.wb  { background: #f59e0b; }
+  .blk.idle { background: #f1f5f9; color: #94a3b8; font-weight: 500; cursor: default; font-size: 10px; }
+  .blk.idle:hover { filter: none; transform: none; box-shadow: none; }
+  .blk.dm { opacity: .25; transition: opacity .15s; }
+
+  .tl-note {
+    font-size: 11px; color: var(--dim); text-align: center;
+    margin-top: 8px; font-style: italic;
+  }
+
+  /* Total time comparison bars */
+  .total-bar {
+    height: 6px; border-radius: 3px; margin-top: 6px;
+    transition: width .4s ease;
+  }
+  .total-bar.seq { background: linear-gradient(90deg, #3b82f6 45%, #10b981 55%, #f59e0b 98%); width: 100%; }
+  .total-bar.pip { background: linear-gradient(90deg, #3b82f6 35%, #10b981 60%, #f59e0b 95%); width: 73%; }
+
+  /* After timeline sync-line overlay */
+  .after-wrap { position: relative; }
+  .sync-svg {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    pointer-events: none; z-index: 4; overflow: visible;
+  }
+  .sline { stroke: #cbd5e1; stroke-width: 1.5; stroke-dasharray: 4 3; transition: all .2s ease; }
+  .sline.hl { stroke-width: 2.5; stroke-dasharray: none; }
+  .sline.hl-b { stroke: #3b82f6; }
+  .sline.hl-g { stroke: #10b981; }
+  .sarrow { transition: fill .2s ease; }
+
+  /* ── Barrier Cards ── */
+  .barrier-title {
+    font-size: 15px; font-weight: 700; text-align: center; margin-bottom: 10px;
+  }
+  .bgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .bcard {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 12px 14px;
+    box-shadow: 0 1px 3px rgba(0,0,0,.04);
+    border-left-width: 4px; transition: all .2s ease; cursor: default;
+  }
+  .bcard.hl { box-shadow: 0 0 0 2px var(--accent), 0 4px 16px rgba(59,130,246,.12); transform: translateY(-2px); }
+  .bcard.src-b { border-left-color: #3b82f6; }
+  .bcard.src-g { border-left-color: #10b981; }
+  .bcard.src-o { border-left-color: #f59e0b; }
+  .bcard .bname {
+    font-family: 'SF Mono','Fira Code',monospace; font-size: 13px;
+    font-weight: 700; margin-bottom: 4px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .bcard .bdir {
+    display: inline-flex; align-items: center; gap: 3px; font-size: 12px;
+  }
+  .bcard .bdir .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  .bcard .bdir .arr { color: #94a3b8; font-weight: 400; }
+  .bcard .bdesc { font-size: 12px; color: var(--text); margin-bottom: 3px; line-height: 1.4; }
+  .bcard .btype { font-size: 11px; color: var(--dim); font-family: 'SF Mono','Fira Code',monospace; }
+
+  @media(max-width:700px) {
+    .bgrid { grid-template-columns: 1fr; }
+  }
+</style>
+<style data-id="immersive-translate-input-injected-css"></style></head>
+<body>
+
+<h1>Warp Specialization: Overlap Everything</h1>
+<p class="sub">Dedicated roles for load / compute / writeback — maximize hardware utilization</p>
+
+<!-- ════════════════════════════════════════════════════════════
+     SECTION 1 — Before vs After Timeline
+     ════════════════════════════════════════════════════════════ -->
+
+<!-- ── Before: Sequential ── -->
+<div class="tl-wrap">
+  <div class="tl-head">
+    <span class="badge red">Before (Step 4): Sequential</span>
+    <span class="time-arrow">TIME →</span>
+  </div>
+  <div class="tl-grid" style="grid-template-columns:100px repeat(11,1fr);">
+    <div class="tl-lbl">Single warp</div>
+    <div class="blk tma" style="grid-column:2">L k=0</div>
+    <div class="blk mma" style="grid-column:3">M k=0</div>
+    <div class="blk tma" style="grid-column:4">L k=1</div>
+    <div class="blk mma" style="grid-column:5">M k=1</div>
+    <div class="blk tma" style="grid-column:6">L k=2</div>
+    <div class="blk mma" style="grid-column:7">M k=2</div>
+    <div class="blk tma" style="grid-column:8">L k=3</div>
+    <div class="blk mma" style="grid-column:9">M k=3</div>
+    <div class="blk tma" style="grid-column:10">L k=4</div>
+    <div class="blk mma" style="grid-column:11">M k=4</div>
+    <div class="blk wb" style="grid-column:12">WB</div>
+  </div>
+  <div class="total-bar seq"></div>
+  <div class="tl-note">Load and compute are serialized — hardware idle 50% of time</div>
+</div>
+
+<!-- ── After: Pipelined ── -->
+<div class="tl-wrap">
+  <div class="tl-head">
+    <span class="badge grn">After (Step 7): Pipelined</span>
+    <span class="time-arrow">TIME →</span>
+  </div>
+  <div class="after-wrap">
+    <div class="tl-grid" id="after-grid" style="grid-template-columns:100px repeat(11,1fr); row-gap:8px; column-gap:2px;">
+      <!-- TMA lane (row 1) -->
+      <div class="tl-lbl" style="grid-row:1">TMA<small>WG1 / warp3</small></div>
+      <div class="blk tma" id="t0" data-k="0" data-lane="tma" style="grid-row:1;grid-column:2">L k=0</div>
+      <div class="blk tma" id="t1" data-k="1" data-lane="tma" style="grid-row:1;grid-column:3">L k=1</div>
+      <div class="blk tma" id="t2" data-k="2" data-lane="tma" style="grid-row:1;grid-column:4">L k=2</div>
+      <div class="blk tma" id="t3" data-k="3" data-lane="tma" style="grid-row:1;grid-column:5">L k=3</div>
+      <div class="blk tma" id="t4" data-k="4" data-lane="tma" style="grid-row:1;grid-column:6">L k=4</div>
+
+      <!-- MMA lane (row 2) -->
+      <div class="tl-lbl" style="grid-row:2">MMA<small>WG1 / warp0</small></div>
+      <div class="blk idle" style="grid-row:2;grid-column:2">idle</div>
+      <div class="blk mma" id="m0" data-k="0" data-lane="mma" style="grid-row:2;grid-column:3">M k=0</div>
+      <div class="blk mma" id="m1" data-k="1" data-lane="mma" style="grid-row:2;grid-column:4">M k=1</div>
+      <div class="blk mma" id="m2" data-k="2" data-lane="mma" style="grid-row:2;grid-column:5">M k=2</div>
+      <div class="blk mma" id="m3" data-k="3" data-lane="mma" style="grid-row:2;grid-column:6">M k=3</div>
+      <div class="blk mma" id="m4" data-k="4" data-lane="mma" style="grid-row:2;grid-column:7">M k=4</div>
+
+      <!-- Writeback lane (row 3) -->
+      <div class="tl-lbl" style="grid-row:3">Writeback<small>WG0</small></div>
+      <div class="blk idle" style="grid-row:3;grid-column:2/8">idle</div>
+      <div class="blk wb" id="wb0" data-lane="wb" style="grid-row:3;grid-column:8">WB 0</div>
+      <div class="blk wb" id="wb1" data-lane="wb" style="grid-row:3;grid-column:9">WB 1</div>
+    </div>
+    <svg class="sync-svg" id="sync-svg" width="1010" height="136" viewBox="0 0 1010 136"><line x1="183.76249313354492" y1="41" x2="183.76249313354492" y2="43" class="sline" data-type="tma2mma" data-k="0"></line><polygon points="179.76249313354492,43 187.76249313354492,43 183.76249313354492,47" class="sarrow" data-type="tma2mma" data-k="0" fill="#cbd5e1"></polygon><line x1="266.5249900817871" y1="41" x2="266.5249900817871" y2="43" class="sline" data-type="tma2mma" data-k="1"></line><polygon points="262.5249900817871,43 270.5249900817871,43 266.5249900817871,47" class="sarrow" data-type="tma2mma" data-k="1" fill="#cbd5e1"></polygon><line x1="349.28750228881836" y1="41" x2="349.28750228881836" y2="43" class="sline" data-type="tma2mma" data-k="2"></line><polygon points="345.28750228881836,43 353.28750228881836,43 349.28750228881836,47" class="sarrow" data-type="tma2mma" data-k="2" fill="#cbd5e1"></polygon><line x1="432.0500144958496" y1="41" x2="432.0500144958496" y2="43" class="sline" data-type="tma2mma" data-k="3"></line><polygon points="428.0500144958496,43 436.0500144958496,43 432.0500144958496,47" class="sarrow" data-type="tma2mma" data-k="3" fill="#cbd5e1"></polygon><line x1="514.8124961853027" y1="41" x2="514.8124961853027" y2="43" class="sline" data-type="tma2mma" data-k="4"></line><polygon points="510.81249618530273,43 518.8124961853027,43 514.8124961853027,47" class="sarrow" data-type="tma2mma" data-k="4" fill="#cbd5e1"></polygon><line x1="556.1968460083008" y1="89" x2="638.9625205993652" y2="91" class="sline" data-type="mma2ld"></line><polygon points="634.9625205993652,91 642.9625205993652,91 638.9625205993652,95" class="sarrow" data-type="mma2ld" fill="#cbd5e1"></polygon></svg>
+  </div>
+  <div class="total-bar pip"></div>
+  <div class="tl-note">All three actors run concurrently — pipeline stays full</div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════
+     SECTION 2 — Barrier Roles
+     ════════════════════════════════════════════════════════════ -->
+<div style="margin-top:18px;">
+  <div class="barrier-title">Barrier Roles</div>
+  <div class="bgrid">
+
+    <div class="bcard src-b" id="bc-tma2mma">
+      <div class="bname">
+        tma2mma[PIPE_DEPTH]
+        <span class="bdir"><span class="dot" style="background:#3b82f6"></span><span class="arr">→</span><span class="dot" style="background:#10b981"></span></span>
+      </div>
+      <div class="bdesc">TMA signals MMA: SMEM data ready for stage k</div>
+      <div class="btype">Type: TMABar (TMA arrive with byte count)</div>
+    </div>
+
+    <div class="bcard src-g" id="bc-mma2tma">
+      <div class="bname">
+        mma2tma[PIPE_DEPTH]
+        <span class="bdir"><span class="dot" style="background:#10b981"></span><span class="arr">→</span><span class="dot" style="background:#3b82f6"></span></span>
+      </div>
+      <div class="bdesc">MMA signals TMA: SMEM buffer free, can reuse stage k</div>
+      <div class="btype">Type: TCGen05Bar (tcgen05.commit)</div>
+    </div>
+
+    <div class="bcard src-g" id="bc-mma2ld">
+      <div class="bname">
+        mma2ld
+        <span class="bdir"><span class="dot" style="background:#10b981"></span><span class="arr">→</span><span class="dot" style="background:#f59e0b"></span></span>
+      </div>
+      <div class="bdesc">MMA signals Writeback: TMEM accumulation complete</div>
+      <div class="btype">Type: TCGen05Bar (tcgen05.commit)</div>
+    </div>
+
+    <div class="bcard src-o" id="bc-ld2mma">
+      <div class="bname">
+        ld2mma
+        <span class="bdir"><span class="dot" style="background:#f59e0b"></span><span class="arr">→</span><span class="dot" style="background:#10b981"></span></span>
+      </div>
+      <div class="bdesc">Writeback signals MMA: TMEM read complete, safe to overwrite</div>
+      <div class="btype">Type: MBarrier (128 threads arrive)</div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+(function() {
+  var K = 5;
+  var NS = 'http://www.w3.org/2000/svg';
+
+  function el(id) { return document.getElementById(id); }
+
+  /* ── Draw sync arrows between lanes ── */
+  function drawSyncLines() {
+    var svg = el('sync-svg');
+    var grid = el('after-grid');
+    if (!svg || !grid) return;
+
+    var gr = grid.getBoundingClientRect();
+    var w = grid.offsetWidth, h = grid.offsetHeight;
+    svg.setAttribute('width', w);
+    svg.setAttribute('height', h);
+    svg.setAttribute('viewBox', '0 0 ' + w + ' ' + h);
+    svg.innerHTML = '';
+
+    var AW = 4;
+
+    for (var k = 0; k < K; k++) {
+      var tEl = el('t' + k), mEl = el('m' + k);
+      if (!tEl || !mEl) continue;
+      var tR = tEl.getBoundingClientRect(), mR = mEl.getBoundingClientRect();
+      var x = (tR.right + mR.left) / 2 - gr.left;
+      var y1 = tR.bottom - gr.top + 1;
+      var y2 = mR.top - gr.top - 1;
+
+      var ln = document.createElementNS(NS, 'line');
+      ln.setAttribute('x1', x); ln.setAttribute('y1', y1);
+      ln.setAttribute('x2', x); ln.setAttribute('y2', y2 - AW);
+      ln.setAttribute('class', 'sline');
+      ln.setAttribute('data-type', 'tma2mma');
+      ln.setAttribute('data-k', k);
+      svg.appendChild(ln);
+
+      var tri = document.createElementNS(NS, 'polygon');
+      tri.setAttribute('points',
+        (x - AW) + ',' + (y2 - AW) + ' ' +
+        (x + AW) + ',' + (y2 - AW) + ' ' +
+        x + ',' + y2);
+      tri.setAttribute('class', 'sarrow');
+      tri.setAttribute('data-type', 'tma2mma');
+      tri.setAttribute('data-k', k);
+      tri.setAttribute('fill', '#cbd5e1');
+      svg.appendChild(tri);
+    }
+
+    var lastM = el('m' + (K - 1)), wbEl = el('wb0');
+    if (lastM && wbEl) {
+      var mR2 = lastM.getBoundingClientRect(), wR = wbEl.getBoundingClientRect();
+      var x1 = (mR2.left + mR2.right) / 2 - gr.left;
+      var y1 = mR2.bottom - gr.top + 1;
+      var x2 = (wR.left + wR.right) / 2 - gr.left;
+      var y2 = wR.top - gr.top - 1;
+
+      var ln2 = document.createElementNS(NS, 'line');
+      ln2.setAttribute('x1', x1); ln2.setAttribute('y1', y1);
+      ln2.setAttribute('x2', x2); ln2.setAttribute('y2', y2 - AW);
+      ln2.setAttribute('class', 'sline');
+      ln2.setAttribute('data-type', 'mma2ld');
+      svg.appendChild(ln2);
+
+      var tri2 = document.createElementNS(NS, 'polygon');
+      tri2.setAttribute('points',
+        (x2 - AW) + ',' + (y2 - AW) + ' ' +
+        (x2 + AW) + ',' + (y2 - AW) + ' ' +
+        x2 + ',' + y2);
+      tri2.setAttribute('class', 'sarrow');
+      tri2.setAttribute('data-type', 'mma2ld');
+      tri2.setAttribute('fill', '#cbd5e1');
+      svg.appendChild(tri2);
+    }
+  }
+
+  /* ── Hover helpers ── */
+  var bcIds = ['bc-tma2mma', 'bc-mma2tma', 'bc-mma2ld', 'bc-ld2mma'];
+
+  function clearAll() {
+    document.querySelectorAll('.blk.hl,.blk.dm').forEach(function(e) {
+      e.classList.remove('hl', 'dm');
+    });
+    document.querySelectorAll('.sline').forEach(function(e) {
+      e.classList.remove('hl', 'hl-b', 'hl-g');
+    });
+    document.querySelectorAll('.sarrow').forEach(function(e) {
+      e.setAttribute('fill', '#cbd5e1');
+    });
+    bcIds.forEach(function(id) { var e = el(id); if (e) e.classList.remove('hl'); });
+  }
+
+  function hlEl(id) { var e = el(id); if (e) e.classList.add('hl'); }
+  function hlBc(id) { var e = el(id); if (e) e.classList.add('hl'); }
+
+  function dimOthers(keep) {
+    var set = {};
+    keep.forEach(function(id) { set[id] = 1; });
+    document.querySelectorAll('#after-grid .blk:not(.idle)').forEach(function(e) {
+      if (!set[e.id]) e.classList.add('dm');
+    });
+  }
+
+  function hlSync(type, k) {
+    var color = type === 'tma2mma' ? '#3b82f6' : '#10b981';
+    var cls = type === 'tma2mma' ? 'hl-b' : 'hl-g';
+    document.querySelectorAll('.sline').forEach(function(ln) {
+      if (ln.getAttribute('data-type') !== type) return;
+      if (k !== undefined && ln.getAttribute('data-k') != k) return;
+      ln.classList.add('hl', cls);
+    });
+    document.querySelectorAll('.sarrow').forEach(function(e) {
+      if (e.getAttribute('data-type') !== type) return;
+      if (k !== undefined && e.getAttribute('data-k') != k) return;
+      e.setAttribute('fill', color);
+    });
+  }
+
+  /* ── Setup listeners ── */
+  function setup() {
+    for (var k = 0; k < K; k++) {
+      (function(k) {
+        var te = el('t' + k);
+        if (!te) return;
+        te.addEventListener('mouseenter', function() {
+          clearAll();
+          hlEl('t' + k); hlEl('m' + k);
+          dimOthers(['t' + k, 'm' + k]);
+          hlSync('tma2mma', k);
+          hlBc('bc-tma2mma');
+          if (k > 0) hlBc('bc-mma2tma');
+        });
+        te.addEventListener('mouseleave', clearAll);
+      })(k);
+    }
+
+    for (var k = 0; k < K; k++) {
+      (function(k) {
+        var me = el('m' + k);
+        if (!me) return;
+        me.addEventListener('mouseenter', function() {
+          clearAll();
+          hlEl('m' + k); hlEl('t' + k);
+          dimOthers(['m' + k, 't' + k]);
+          hlSync('tma2mma', k);
+          hlBc('bc-tma2mma'); hlBc('bc-mma2tma');
+        });
+        me.addEventListener('mouseleave', clearAll);
+      })(k);
+    }
+
+    ['wb0', 'wb1'].forEach(function(id) {
+      var w = el(id);
+      if (!w) return;
+      w.addEventListener('mouseenter', function() {
+        clearAll();
+        hlEl('wb0'); hlEl('wb1'); hlEl('m' + (K - 1));
+        dimOthers(['wb0', 'wb1', 'm' + (K - 1)]);
+        hlSync('mma2ld');
+        hlBc('bc-mma2ld'); hlBc('bc-ld2mma');
+      });
+      w.addEventListener('mouseleave', clearAll);
+    });
+
+    el('bc-tma2mma').addEventListener('mouseenter', function() {
+      clearAll(); this.classList.add('hl');
+      for (var i = 0; i < K; i++) { hlEl('t' + i); hlEl('m' + i); hlSync('tma2mma', i); }
+    });
+    el('bc-tma2mma').addEventListener('mouseleave', clearAll);
+
+    el('bc-mma2tma').addEventListener('mouseenter', function() {
+      clearAll(); this.classList.add('hl');
+      for (var i = 0; i < K; i++) { hlEl('m' + i); hlEl('t' + i); }
+    });
+    el('bc-mma2tma').addEventListener('mouseleave', clearAll);
+
+    el('bc-mma2ld').addEventListener('mouseenter', function() {
+      clearAll(); this.classList.add('hl');
+      hlEl('m' + (K - 1)); hlEl('wb0'); hlEl('wb1');
+      hlSync('mma2ld');
+    });
+    el('bc-mma2ld').addEventListener('mouseleave', clearAll);
+
+    el('bc-ld2mma').addEventListener('mouseenter', function() {
+      clearAll(); this.classList.add('hl');
+      hlEl('wb0'); hlEl('wb1');
+      for (var i = 0; i < K; i++) hlEl('m' + i);
+    });
+    el('bc-ld2mma').addEventListener('mouseleave', clearAll);
+  }
+
+  document.addEventListener('DOMContentLoaded', function() {
+    drawSyncLines();
+    setup();
+  });
+  window.addEventListener('resize', drawSyncLines);
+})();
+</script>
+
+
+</body></html>

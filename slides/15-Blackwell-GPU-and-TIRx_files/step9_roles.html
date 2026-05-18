@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<!-- saved from url=(0068)https://mlsyscourse.org/slides/tirx-gemm/demo/step9_roles.html?embed -->
+<html lang="en" data-immersive-translate-page-theme="light"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Step 9: Asymmetric Roles</title>
+<link rel="stylesheet" href="./viz-base.css">
+<script src="./viz-base.js.下载"></script>
+<style>
+  body { padding: 20px 28px; max-width: 1100px; margin: 0 auto; }
+
+  /* ── Swim Lane Table ── */
+  .swim-wrap {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 18px 20px; box-shadow: 0 1px 3px rgba(0,0,0,.06); margin-bottom: 14px;
+  }
+  .swim-table {
+    width: 100%; border-collapse: separate; border-spacing: 6px;
+    font-size: 12px;
+  }
+  .swim-table th {
+    font-size: 11px; font-weight: 700; color: var(--dim); text-align: center;
+    padding: 6px 4px; font-family: 'SF Mono','Fira Code',monospace;
+  }
+  .swim-table th:first-child { text-align: right; width: 80px; }
+  .swim-table td {
+    border-radius: 8px; padding: 10px 10px; text-align: center;
+    vertical-align: top; line-height: 1.45; font-weight: 600;
+  }
+  .swim-table .row-label {
+    font-size: 13px; font-weight: 800; text-align: right; padding-right: 12px;
+    vertical-align: middle; background: none; white-space: nowrap;
+  }
+  .swim-table .row-label.cta0 { color: #1e40af; }
+  .swim-table .row-label.cta1 { color: #6b7280; }
+
+  .swim-table td .cell-title {
+    font-size: 11px; font-weight: 800; margin-bottom: 3px;
+    font-family: 'SF Mono','Fira Code',monospace;
+  }
+  .swim-table td .cell-desc {
+    font-size: 10px; font-weight: 500; line-height: 1.35; opacity: .9;
+  }
+
+  /* Active cell colors */
+  .c-tma     { background: #dbeafe; color: #1e40af; }
+  .c-barrier { background: #ede9fe; color: #5b21b6; }
+  .c-mma     { background: #dcfce7; color: #166534; }
+  .c-wb      { background: #fff7ed; color: #9a3412; }
+  .c-inactive {
+    background: #f3f4f6; color: #9ca3af;
+  }
+  .c-inactive .cell-title { color: #9ca3af; }
+  .c-inactive .cell-desc { color: #b0b5bd; }
+  .x-mark { font-size: 18px; font-weight: 800; color: #d1d5db; display: block; margin-bottom: 2px; }
+
+  /* ── Code Mapping Cards ── */
+  .cards-row {
+    display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px;
+  }
+  .code-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 14px 14px 12px; box-shadow: 0 1px 3px rgba(0,0,0,.06);
+    border-left: 4px solid transparent;
+  }
+  .code-card.purple { border-left-color: #7c3aed; }
+  .code-card.blue   { border-left-color: #3b82f6; }
+  .code-card.green  { border-left-color: #059669; }
+
+  .code-card .cc-title {
+    font-size: 12px; font-weight: 700; margin-bottom: 8px;
+    font-family: 'SF Mono','Fira Code',monospace;
+  }
+  .code-card.purple .cc-title { color: #7c3aed; }
+  .code-card.blue   .cc-title { color: #3b82f6; }
+  .code-card.green  .cc-title { color: #059669; }
+
+  .code-card code {
+    display: block; font-size: 11px; line-height: 1.55;
+    font-family: 'SF Mono','Fira Code',monospace; color: var(--text);
+    background: #f8f9fb; border-radius: 5px; padding: 6px 8px;
+    margin-bottom: 6px; border: 1px solid #eee; word-break: break-all;
+  }
+  .code-card .cc-desc {
+    font-size: 11px; color: var(--dim); line-height: 1.4;
+  }
+
+  @media(max-width:800px) {
+    .cards-row { grid-template-columns: 1fr; }
+  }
+</style>
+<style data-id="immersive-translate-input-injected-css"></style></head>
+<body>
+
+<h1>Asymmetric Roles</h1>
+<p class="sub">CTA-0 is the coordinator — CTA-1 only loads data</p>
+
+<!-- ═══════════════════════════════════════════════════════════
+     SWIM LANE TABLE
+     ═══════════════════════════════════════════════════════════ -->
+<div class="swim-wrap">
+  <table class="swim-table">
+    <thead>
+      <tr>
+        <th></th>
+        <th>TMA Load</th>
+        <th>Barrier Signal</th>
+        <th>MMA</th>
+        <th>Writeback</th>
+      </tr>
+    </thead>
+    <tbody>
+      <!-- CTA-0 row -->
+      <tr>
+        <td class="row-label cta0">CTA-0</td>
+        <td class="c-tma">
+          <div class="cell-title">Load A₀, B₀</div>
+          <div class="cell-desc">TMA into own SMEM</div>
+        </td>
+        <td class="c-barrier">
+          <div class="cell-title">arrive()</div>
+          <div class="cell-desc">Accumulate both CTAs' bytes into own tma2mma barrier</div>
+        </td>
+        <td class="c-mma">
+          <div class="cell-title">tcgen05.mma</div>
+          <div class="cell-desc">Reads both SMEMs via cta_group=2</div>
+        </td>
+        <td class="c-wb">
+          <div class="cell-title">Writeback</div>
+          <div class="cell-desc">TMEM → SMEM → GMEM</div>
+        </td>
+      </tr>
+      <!-- CTA-1 row -->
+      <tr>
+        <td class="row-label cta1">CTA-1</td>
+        <td class="c-tma">
+          <div class="cell-title">Load A₁, B₁</div>
+          <div class="cell-desc">TMA into own SMEM</div>
+        </td>
+        <td class="c-inactive">
+          <span class="x-mark">✗</span>
+          <div class="cell-desc">CTA-0 handles arrive</div>
+        </td>
+        <td class="c-inactive">
+          <span class="x-mark">✗</span>
+          <div class="cell-desc">CTA-0 drives MMA</div>
+        </td>
+        <td class="c-wb">
+          <div class="cell-title">Writeback</div>
+          <div class="cell-desc">TMEM → SMEM → GMEM</div>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════
+     CODE MAPPING CARDS
+     ═══════════════════════════════════════════════════════════ -->
+<div class="cards-row">
+
+  <div class="code-card purple">
+    <div class="cc-title">remote_view</div>
+    <code>tma2mma_cta0 = tma2mma.remote_view(0)</code>
+    <div class="cc-desc">Both CTAs' TMA targets CTA-0's barrier address. CTA-1 doesn't have its own tma2mma.</div>
+  </div>
+
+  <div class="code-card blue">
+    <div class="cc-title">cbx == 0 guard on arrive</div>
+    <code>if cbx == 0:<br>&nbsp;&nbsp;tma2mma_cta0.arrive(stage,<br>&nbsp;&nbsp;&nbsp;&nbsp;CTA_GROUP * byte_count)</code>
+    <div class="cc-desc">Only CTA-0 signals arrive. It reports the TOTAL bytes from both CTAs.</div>
+  </div>
+
+  <div class="code-card green">
+    <div class="cc-title">cbx == 0 guard on MMA</div>
+    <code>if cbx == 0:<br>&nbsp;&nbsp;Tx.gemm_async(...,<br>&nbsp;&nbsp;&nbsp;&nbsp;cta_group=CTA_GROUP)<br>&nbsp;&nbsp;mma2tma.arrive(stage,<br>&nbsp;&nbsp;&nbsp;&nbsp;cta_group=2, cta_mask=3)</code>
+    <div class="cc-desc">Only CTA-0 issues MMA. cta_mask=3 (0b11) means the signal reaches BOTH CTAs' mma2tma barriers.</div>
+  </div>
+
+</div>
+
+
+
+</body></html>

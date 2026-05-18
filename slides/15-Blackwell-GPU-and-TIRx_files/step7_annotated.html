@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<!-- saved from url=(0072)https://mlsyscourse.org/slides/tirx-gemm/demo/step7_annotated.html?embed -->
+<html lang="en" data-immersive-translate-page-theme="light"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Step 7: Warp Specialization — Code</title>
+<link rel="stylesheet" href="./viz-base.css">
+<link rel="stylesheet" href="./code-highlight.css">
+<script src="./viz-base.js.下载"></script>
+<script src="./code-highlight.js.下载"></script>
+<style>
+  body { padding: 20px 28px; max-width: 1440px; margin: 0 auto; }
+
+  /* ── Barrier header ── */
+  .barrier-decls {
+    background: #1e1e2e; border-radius: 8px; padding: 12px 18px;
+    font-family: 'SF Mono','Fira Code',monospace; font-size: 12px;
+    line-height: 1.75; color: #c4c8d8; margin-bottom: 14px;
+    border: 1px solid var(--border); white-space: pre-wrap;
+  }
+  .barrier-decls .arrow-icon {
+    display: inline-block; width: 18px; height: 12px; margin-right: 4px;
+    vertical-align: middle; position: relative; top: -1px;
+  }
+
+  /* ── Three-column code grid ── */
+  .code-grid {
+    display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px;
+    margin-bottom: 14px;
+  }
+  .code-col {
+    border-radius: 8px; overflow: hidden;
+    border: 1px solid var(--border); background: #1e1e2e;
+    display: flex; flex-direction: column;
+  }
+  .code-header {
+    padding: 7px 12px; font-size: 12px; font-weight: 700;
+    letter-spacing: 0.02em; text-align: center;
+  }
+  .code-header.tma  { background: rgba(59,130,246,0.22); color: #93bbfc; }
+  .code-header.mma  { background: rgba(5,150,105,0.22); color: #6ee7b7; }
+  .code-header.wb   { background: rgba(217,119,6,0.22); color: #fbbf24; }
+  .code-body {
+    padding: 10px 12px; font-family: 'SF Mono','Fira Code',monospace;
+    font-size: 11px; line-height: 1.7; color: #c4c8d8;
+    white-space: pre; overflow-x: auto; flex: 1;
+    max-height: 380px; overflow-y: auto;
+  }
+
+  /* ── Legend bar ── */
+  .legend-bar {
+    display: flex; flex-direction: column; gap: 6px;
+    padding: 10px 16px; border-radius: 8px;
+    background: var(--surface); border: 1px solid var(--border);
+    font-size: 11px; color: var(--dim); line-height: 1.5;
+    font-family: 'SF Mono','Fira Code',monospace;
+  }
+  .legend-bar .leg-item {
+    display: flex; align-items: center; gap: 6px;
+  }
+  .legend-bar .leg-dot {
+    width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+  }
+</style>
+<style data-id="immersive-translate-input-injected-css"></style></head>
+<body>
+
+<h1>Step 7: Warp Specialization — Code</h1>
+<p class="sub">Three actors with typed barriers: TMABar, TCGen05Bar, MBarrier, PipelineState</p>
+
+<!-- ════ Barrier Declarations ════ -->
+<div class="barrier-decls code-dark" id="barrier-decls">tma2mma = <span class="fn">TMABar</span>(pool, PIPE_DEPTH, <span class="str">"tma2mma"</span>)  <svg class="arrow-icon" viewBox="0 0 18 12"><line x1="1" y1="6" x2="14" y2="6" stroke="#3b82f6" stroke-width="2"></line><polygon points="14,3 18,6 14,9" fill="#3b82f6"></polygon></svg><span class="cmt"># TMA → MMA</span>
+mma2tma = <span class="fn">TCGen05Bar</span>(pool, PIPE_DEPTH, <span class="str">"mma2tma"</span>)  <svg class="arrow-icon" viewBox="0 0 18 12"><line x1="1" y1="6" x2="14" y2="6" stroke="#059669" stroke-width="2"></line><polygon points="14,3 18,6 14,9" fill="#059669"></polygon></svg><span class="cmt"># MMA → TMA</span>
+mma2ld  = <span class="fn">TCGen05Bar</span>(pool, <span class="num">1</span>, <span class="str">"mma2ld"</span>)  <svg class="arrow-icon" viewBox="0 0 18 12"><line x1="1" y1="6" x2="14" y2="6" stroke="#059669" stroke-width="2"></line><polygon points="14,3 18,6 14,9" fill="#059669"></polygon></svg><span class="cmt"># MMA → Writeback</span>
+ld2mma  = <span class="fn">MBarrier</span>(pool, <span class="num">1</span>, <span class="str">"ld2mma"</span>)  <svg class="arrow-icon" viewBox="0 0 18 12"><line x1="1" y1="6" x2="14" y2="6" stroke="#d97706" stroke-width="2"></line><polygon points="14,3 18,6 14,9" fill="#d97706"></polygon></svg><span class="cmt"># Writeback → MMA</span></div>
+
+<!-- ════ Three-Column Warp Roles ════ -->
+<div class="code-grid">
+
+  <!-- Column 1: TMA Producer -->
+  <div class="code-col">
+    <div class="code-header tma">TMA Producer (WG1/warp3)</div>
+    <div class="code-body code-dark" id="col-tma"><div><span class="kw">if</span> wg_id == <span class="num">1</span> <span class="kw">and</span> warp_id == <span class="num">3</span>:</div><div>    tma_phase = <span class="fn">PipelineState</span>(<span class="str">"tma"</span>, PIPE_DEPTH)</div><div>    tma_phase.<span class="fn">init</span>(is_producer=<span class="kw">True</span>)</div><div>&nbsp;</div><div>    <span class="dec">@Tx.inline</span></div><div>    <span class="kw">def</span> <span class="fn">tma_load_stage</span>(stage, k_st):</div><div>        mma2tma.<span class="fn">wait</span>(stage, tma_phase.phase)</div><div>        tma_cfg = {<span class="str">"dispatch"</span>: <span class="str">"tma"</span>, <span class="str">"cta_group"</span>: <span class="num">1</span>,</div><div>                   <span class="str">"mbar"</span>: tma2mma.<span class="fn">ptr_to</span>([stage])}</div><div>        Tx.<span class="fn">copy_async</span>(Asmem[stage,:,:], A[...], **tma_cfg)</div><div>        Tx.<span class="fn">copy_async</span>(Bsmem[stage,:,:], B[...], **tma_cfg)</div><div>        tma2mma.<span class="fn">arrive</span>(stage, byte_count)</div><div>&nbsp;</div><div>    <span class="dec">@Tx.inline</span></div><div>    <span class="kw">def</span> <span class="fn">tma_load</span>():</div><div>        <span class="kw">for</span> k <span class="kw">in</span> Tx.<span class="fn">serial</span>(K_TILES):</div><div>            <span class="fn">tma_load_stage</span>(tma_phase.stage, k*BLK_K)</div><div>            tma_phase.<span class="fn">move_to_next_stage</span>()</div><div>&nbsp;</div><div>    <span class="kw">with</span> Tx.<span class="fn">thread</span>(parent=<span class="str">"warp"</span>)[Tx.ptx.<span class="fn">elect_sync</span>()]:</div><div>        <span class="kw">while</span> tile_scheduler.<span class="fn">valid</span>():</div><div>            <span class="fn">tma_load</span>()</div><div>            tile_scheduler.<span class="fn">next_tile</span>()</div></div>
+  </div>
+
+  <!-- Column 2: MMA Consumer -->
+  <div class="code-col">
+    <div class="code-header mma">MMA Consumer (WG1/warp0)</div>
+    <div class="code-body code-dark" id="col-mma"><div><span class="kw">elif</span> warp_id == <span class="num">0</span>:</div><div>    mma_phase = <span class="fn">PipelineState</span>(<span class="str">"mma"</span>, PIPE_DEPTH)</div><div>    mma_phase.<span class="fn">init</span>(is_producer=<span class="kw">False</span>)</div><div>    ld_phase = <span class="fn">PipelineState</span>(<span class="str">"ld"</span>, <span class="num">1</span>)</div><div>    ld_phase.<span class="fn">init</span>(is_producer=<span class="kw">True</span>)</div><div>&nbsp;</div><div>    <span class="dec">@Tx.inline</span></div><div>    <span class="kw">def</span> <span class="fn">mma_stage</span>(stage):</div><div>        tma2mma.<span class="fn">wait</span>(stage, mma_phase.phase)</div><div>        Tx.<span class="fn">gemm_async</span>(tmem[:,:BLK_N],</div><div>            Asmem[stage,:,:], Bsmem[stage,:,:],</div><div>            accum=accum, dispatch=<span class="str">"tcgen05"</span>,</div><div>            cta_group=<span class="num">1</span>)</div><div>        accum = <span class="num">1</span></div><div>        mma2tma.<span class="fn">arrive</span>(stage, cta_group=<span class="num">1</span>, cta_mask=<span class="num">1</span>)</div><div>&nbsp;</div><div>    <span class="dec">@Tx.inline</span></div><div>    <span class="kw">def</span> <span class="fn">mma</span>():</div><div>        ld2mma.<span class="fn">wait</span>(<span class="num">0</span>, ld_phase.phase)</div><div>        ld_phase.<span class="fn">move_to_next_stage</span>()</div><div>        accum = <span class="num">0</span></div><div>        <span class="kw">for</span> k <span class="kw">in</span> Tx.<span class="fn">serial</span>(K_TILES):</div><div>            <span class="fn">mma_stage</span>(mma_phase.stage)</div><div>            mma_phase.<span class="fn">move_to_next_stage</span>()</div><div>        mma2ld.<span class="fn">arrive</span>(<span class="num">0</span>, cta_group=<span class="num">1</span>, cta_mask=<span class="num">1</span>)</div><div>&nbsp;</div><div>    <span class="kw">with</span> Tx.<span class="fn">thread</span>(parent=<span class="str">"warp"</span>)[Tx.ptx.<span class="fn">elect_sync</span>()]:</div><div>        <span class="kw">while</span> tile_scheduler.<span class="fn">valid</span>():</div><div>            <span class="fn">mma</span>()</div><div>            tile_scheduler.<span class="fn">next_tile</span>()</div></div>
+  </div>
+
+  <!-- Column 3: Writeback -->
+  <div class="code-col">
+    <div class="code-header wb">Writeback (WG0)</div>
+    <div class="code-body code-dark" id="col-wb"><div><span class="kw">elif</span> wg_id == <span class="num">0</span>:</div><div>    wb_phase = <span class="fn">PipelineState</span>(<span class="str">"wb"</span>, <span class="num">1</span>)</div><div>    wb_phase.<span class="fn">init</span>(is_producer=<span class="kw">False</span>)</div><div>&nbsp;</div><div>    <span class="dec">@Tx.inline</span></div><div>    <span class="kw">def</span> <span class="fn">writeback</span>():</div><div>        mma2ld.<span class="fn">wait</span>(<span class="num">0</span>, wb_phase.phase)</div><div>        wb_phase.<span class="fn">move_to_next_stage</span>()</div><div>        Tx.ptx.tcgen05.fence.<span class="fn">after_thread_sync</span>()</div><div>&nbsp;</div><div>        <span class="cmt"># TMEM → registers (chunked)</span></div><div>        <span class="kw">for</span> no <span class="kw">in</span> Tx.<span class="fn">unroll</span>(MMA_N // TMEM_LD_N):</div><div>            Dreg = Tx.<span class="fn">alloc_local</span>((TMEM_LD_N,), <span class="str">"f32"</span>)</div><div>            <span class="kw">with</span> Tx.<span class="fn">warpgroup</span>():</div><div>                Tx.<span class="fn">copy</span>(Dreg_wg, tmem[:,no*<span class="num">8</span>:no*<span class="num">8</span>+<span class="num">8</span>])</div><div>            <span class="kw">with</span> Tx.<span class="fn">thread</span>():</div><div>                Tx.<span class="fn">cast</span>(Dreg_16b[no*<span class="num">8</span>:(no+<span class="num">1</span>)*<span class="num">8</span>], Dreg)</div><div>&nbsp;</div><div>        ld2mma.<span class="fn">arrive</span>(<span class="num">0</span>, cta_id=<span class="num">0</span>, pred=<span class="kw">True</span>)</div><div>&nbsp;</div><div>        <span class="cmt"># SMEM → GMEM (TMA store)</span></div><div>        <span class="kw">for</span> no <span class="kw">in</span> Tx.<span class="fn">unroll</span>(MMA_N // EPI_N):</div><div>            <span class="kw">with</span> Tx.<span class="fn">thread</span>():</div><div>                Tx.<span class="fn">copy</span>(Dsmem[tid, :], Dreg_16b[...])</div><div>                Tx.ptx.fence.<span class="fn">proxy_async</span>(<span class="str">"shared::cta"</span>)</div><div>            Tx.cuda.<span class="fn">warpgroup_sync</span>(<span class="num">10</span>)</div><div>            <span class="kw">with</span> Tx.<span class="fn">thread</span>(parent=<span class="str">"warpgroup"</span>)[Tx.ptx.<span class="fn">elect_sync</span>()]:</div><div>                Tx.<span class="fn">copy_async</span>(D[...], Dsmem, dispatch=<span class="str">"tma"</span>)</div><div>                Tx.ptx.cp_async.bulk.<span class="fn">commit_group</span>()</div><div>                Tx.ptx.cp_async.bulk.<span class="fn">wait_group</span>(<span class="num">0</span>)</div><div>            Tx.cuda.<span class="fn">warpgroup_sync</span>(<span class="num">10</span>)</div><div>&nbsp;</div><div>    <span class="kw">while</span> tile_scheduler.<span class="fn">valid</span>():</div><div>        <span class="fn">writeback</span>()</div><div>        tile_scheduler.<span class="fn">next_tile</span>()</div></div>
+  </div>
+
+</div>
+
+
+<script>
+(function () {
+  var svgArrow = function(color) {
+    return '<svg class="arrow-icon" viewBox="0 0 18 12"><line x1="1" y1="6" x2="14" y2="6" stroke="' + color + '" stroke-width="2"/><polygon points="14,3 18,6 14,9" fill="' + color + '"/></svg>';
+  };
+  var barriers = [
+    ['tma2mma = TMABar(pool, PIPE_DEPTH, "tma2mma")',       '#3b82f6', '# TMA → MMA'],
+    ['mma2tma = TCGen05Bar(pool, PIPE_DEPTH, "mma2tma")',   '#059669', '# MMA → TMA'],
+    ['mma2ld  = TCGen05Bar(pool, 1, "mma2ld")',             '#059669', '# MMA → Writeback'],
+    ['ld2mma  = MBarrier(pool, 1, "ld2mma")',               '#d97706', '# Writeback → MMA']
+  ];
+  document.getElementById('barrier-decls').innerHTML = barriers.map(function(b) {
+    return highlightCode(b[0]) + '  ' + svgArrow(b[1]) + '<span class="cmt">' + escapeHtml(b[2]) + '</span>';
+  }).join('\n');
+
+  var tmaCode = String.raw`if wg_id == 1 and warp_id == 3:
+    tma_phase = PipelineState("tma", PIPE_DEPTH)
+    tma_phase.init(is_producer=True)
+
+    @Tx.inline
+    def tma_load_stage(stage, k_st):
+        mma2tma.wait(stage, tma_phase.phase)
+        tma_cfg = {"dispatch": "tma", "cta_group": 1,
+                   "mbar": tma2mma.ptr_to([stage])}
+        Tx.copy_async(Asmem[stage,:,:], A[...], **tma_cfg)
+        Tx.copy_async(Bsmem[stage,:,:], B[...], **tma_cfg)
+        tma2mma.arrive(stage, byte_count)
+
+    @Tx.inline
+    def tma_load():
+        for k in Tx.serial(K_TILES):
+            tma_load_stage(tma_phase.stage, k*BLK_K)
+            tma_phase.move_to_next_stage()
+
+    with Tx.thread(parent="warp")[Tx.ptx.elect_sync()]:
+        while tile_scheduler.valid():
+            tma_load()
+            tile_scheduler.next_tile()`;
+
+  var mmaCode = String.raw`elif warp_id == 0:
+    mma_phase = PipelineState("mma", PIPE_DEPTH)
+    mma_phase.init(is_producer=False)
+    ld_phase = PipelineState("ld", 1)
+    ld_phase.init(is_producer=True)
+
+    @Tx.inline
+    def mma_stage(stage):
+        tma2mma.wait(stage, mma_phase.phase)
+        Tx.gemm_async(tmem[:,:BLK_N],
+            Asmem[stage,:,:], Bsmem[stage,:,:],
+            accum=accum, dispatch="tcgen05",
+            cta_group=1)
+        accum = 1
+        mma2tma.arrive(stage, cta_group=1, cta_mask=1)
+
+    @Tx.inline
+    def mma():
+        ld2mma.wait(0, ld_phase.phase)
+        ld_phase.move_to_next_stage()
+        accum = 0
+        for k in Tx.serial(K_TILES):
+            mma_stage(mma_phase.stage)
+            mma_phase.move_to_next_stage()
+        mma2ld.arrive(0, cta_group=1, cta_mask=1)
+
+    with Tx.thread(parent="warp")[Tx.ptx.elect_sync()]:
+        while tile_scheduler.valid():
+            mma()
+            tile_scheduler.next_tile()`;
+
+  var wbCode = String.raw`elif wg_id == 0:
+    wb_phase = PipelineState("wb", 1)
+    wb_phase.init(is_producer=False)
+
+    @Tx.inline
+    def writeback():
+        mma2ld.wait(0, wb_phase.phase)
+        wb_phase.move_to_next_stage()
+        Tx.ptx.tcgen05.fence.after_thread_sync()
+
+        # TMEM → registers (chunked)
+        for no in Tx.unroll(MMA_N // TMEM_LD_N):
+            Dreg = Tx.alloc_local((TMEM_LD_N,), "f32")
+            with Tx.warpgroup():
+                Tx.copy(Dreg_wg, tmem[:,no*8:no*8+8])
+            with Tx.thread():
+                Tx.cast(Dreg_16b[no*8:(no+1)*8], Dreg)
+
+        ld2mma.arrive(0, cta_id=0, pred=True)
+
+        # SMEM → GMEM (TMA store)
+        for no in Tx.unroll(MMA_N // EPI_N):
+            with Tx.thread():
+                Tx.copy(Dsmem[tid, :], Dreg_16b[...])
+                Tx.ptx.fence.proxy_async("shared::cta")
+            Tx.cuda.warpgroup_sync(10)
+            with Tx.thread(parent="warpgroup")[Tx.ptx.elect_sync()]:
+                Tx.copy_async(D[...], Dsmem, dispatch="tma")
+                Tx.ptx.cp_async.bulk.commit_group()
+                Tx.ptx.cp_async.bulk.wait_group(0)
+            Tx.cuda.warpgroup_sync(10)
+
+    while tile_scheduler.valid():
+        writeback()
+        tile_scheduler.next_tile()`;
+
+  renderAnnotatedCode(document.getElementById('col-tma'), tmaCode);
+  renderAnnotatedCode(document.getElementById('col-mma'), mmaCode);
+  renderAnnotatedCode(document.getElementById('col-wb'), wbCode);
+})();
+</script>
+
+
+</body></html>

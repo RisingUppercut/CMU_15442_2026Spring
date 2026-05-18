@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<!-- saved from url=(0071)https://mlsyscourse.org/slides/tirx-gemm/demo/step1_fullcode.html?embed -->
+<html lang="en" data-immersive-translate-page-theme="light"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Step 1: Full Code</title>
+<link rel="stylesheet" href="./viz-base.css">
+<link rel="stylesheet" href="./code-highlight.css">
+<script src="./viz-base.js.下载"></script>
+<script src="./code-highlight.js.下载"></script>
+<style>
+  body { padding: 14px 24px; max-width: 1440px; margin: 0 auto; }
+  header { margin-bottom: 8px; }
+  header h1 { margin-bottom: 2px; font-size: 1.3rem; }
+
+  .main { display: grid; grid-template-columns: 1fr 310px; gap: 14px; }
+
+  .cb-panel { max-height: 620px; overflow-y: auto; }
+
+  #step1-code {
+    margin: 0; font-size: 11px; line-height: 1.45; max-height: none;
+    padding-bottom: 12px;
+  }
+
+  /* Right info panel */
+  .info-panel {
+    background: var(--bg-surface); border: 1px solid var(--border);
+    border-radius: var(--radius); overflow: hidden;
+  }
+  .info-panel h3 {
+    font-size: 11px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.06em; color: var(--text-muted);
+    padding: 10px 14px 8px; margin: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .region-btn {
+    display: flex; align-items: center; gap: 8px;
+    width: 100%; padding: 7px 14px;
+    font-size: 12px; font-weight: 500; cursor: pointer;
+    color: var(--text-muted); background: none; border: none;
+    border-bottom: 1px solid var(--border);
+    text-align: left; transition: all 0.15s;
+    font-family: inherit;
+  }
+  .region-btn:hover { background: rgba(255,255,255,0.04); color: var(--text); }
+  .region-btn.active { background: rgba(255,255,255,0.06); color: var(--text); font-weight: 600; }
+  .region-btn .dot {
+    width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0;
+  }
+
+  .desc-box {
+    padding: 12px 14px;
+    font-size: 12px; line-height: 1.65;
+    color: var(--text-muted);
+    min-height: 120px;
+  }
+  .desc-box .title {
+    font-weight: 700; color: var(--text); margin-bottom: 6px; font-size: 12.5px;
+  }
+  .desc-box code {
+    font-family: 'SF Mono','Fira Code',monospace;
+    font-size: 10.5px; background: rgba(255,255,255,0.08);
+    padding: 1px 4px; border-radius: 3px;
+  }
+  .desc-box .key-point {
+    margin-top: 8px; padding: 6px 8px;
+    background: rgba(59,130,246,0.1); border-radius: 4px;
+    border-left: 3px solid var(--accent);
+    font-size: 11px; color: var(--accent);
+  }
+</style>
+<style data-id="immersive-translate-input-injected-css"></style></head>
+<body>
+
+<header>
+  <h1>Step 1: Sync GEMM — Full Kernel Code</h1>
+  <p class="sub">Click a colored region to see its explanation · Single tile 128×128×64</p>
+</header>
+
+<div class="main">
+  <div class="cb-panel dark">
+    <pre class="code-dark" id="step1-code"><div class="cb-region" data-region="setup" style="border-left-color:#6b7280"><div class="cb-line" data-ln="1"><span class="kw">with</span> Tx.<span class="fn">kernel</span>():</div><div class="cb-line" data-ln="2">    bx, by = Tx.<span class="fn">cta_id</span>([M // BLK_M, N // BLK_N], parent=<span class="str">"kernel"</span>)</div><div class="cb-line" data-ln="3">    wg_id = Tx.<span class="fn">warpgroup_id</span>([<span class="num">1</span>], parent=<span class="str">"cta"</span>)</div><div class="cb-line" data-ln="4">    warp_id = Tx.<span class="fn">warp_id</span>([<span class="num">4</span>], parent=<span class="str">"warpgroup"</span>)</div><div class="cb-line" data-ln="5">    lane_id = Tx.<span class="fn">thread_id</span>([<span class="num">32</span>], parent=<span class="str">"warp"</span>)</div><div class="cb-line" data-ln="6">&nbsp;</div><div class="cb-line" data-ln="7">    <span class="cmt"># ── Shared memory allocation ──</span></div><div class="cb-line" data-ln="8">    pool = Tx.<span class="fn">PoolAllocator</span>()</div><div class="cb-line" data-ln="9">    tmem_addr = pool.<span class="fn">alloc</span>((<span class="num">1</span>,), <span class="str">"uint32"</span>)</div><div class="cb-line" data-ln="10">    mma_bar = pool.<span class="fn">alloc</span>((<span class="num">1</span>,), <span class="str">"uint64"</span>, align=<span class="num">8</span>)   <span class="cmt"># MMA done barrier</span></div><div class="cb-line" data-ln="11">    Asmem = pool.<span class="fn">alloc</span>((BLK_M, BLK_K), a_type, layout=A_layout)</div><div class="cb-line" data-ln="12">    Bsmem = pool.<span class="fn">alloc</span>((BLK_N, BLK_K), b_type, layout=B_layout)</div><div class="cb-line" data-ln="13">    pool.<span class="fn">commit</span>()</div><div class="cb-line" data-ln="14">&nbsp;</div><div class="cb-line" data-ln="15">    <span class="cmt"># ── Init barrier + allocate TMEM ──</span></div><div class="cb-line" data-ln="16">    <span class="kw">if</span> warp_id == <span class="num">0</span>:</div><div class="cb-line" data-ln="17">        <span class="kw">if</span> lane_id == <span class="num">0</span>:</div><div class="cb-line" data-ln="18">            Tx.ptx.mbarrier.<span class="fn">init</span>(mma_bar, <span class="num">1</span>)</div><div class="cb-line" data-ln="19">        Tx.ptx.tcgen05.<span class="fn">alloc</span>(tmem_addr, n_cols=<span class="num">512</span>, cta_group=<span class="num">1</span>)</div><div class="cb-line" data-ln="20">    Tx.ptx.fence.<span class="fn">proxy_async</span>(<span class="str">"shared::cta"</span>)</div><div class="cb-line" data-ln="21">    Tx.ptx.fence.<span class="fn">mbarrier_init</span>()</div><div class="cb-line" data-ln="22">    Tx.cuda.<span class="fn">cta_sync</span>()</div><div class="cb-line" data-ln="23">&nbsp;</div><div class="cb-line" data-ln="24">    tmem = Tx.<span class="fn">decl_buffer</span>((<span class="num">128</span>, <span class="num">512</span>), <span class="str">"f32"</span>, scope=<span class="str">"tmem"</span>)</div></div><div class="cb-region" data-region="load" style="border-left-color:#3b82f6"><div class="cb-line" data-ln="26">    <span class="cmt"># ── Sync load: all threads copy GMEM → SMEM ──</span></div><div class="cb-line" data-ln="27">    <span class="kw">with</span> Tx.<span class="fn">cta</span>():</div><div class="cb-line" data-ln="28">        Tx.<span class="fn">copy</span>(Asmem[:,:], A[m_st:m_st+BLK_M, <span class="num">0</span>:BLK_K])</div><div class="cb-line" data-ln="29">        Tx.<span class="fn">copy</span>(Bsmem[:,:], B[n_st:n_st+BLK_N, <span class="num">0</span>:BLK_K])</div><div class="cb-line" data-ln="30">    Tx.cuda.<span class="fn">cta_sync</span>()</div><div class="cb-line" data-ln="31">    Tx.ptx.tcgen05.fence.<span class="fn">after_thread_sync</span>()</div></div><div class="cb-region" data-region="mma" style="border-left-color:#059669"><div class="cb-line" data-ln="33">    <span class="cmt"># ── MMA: one thread issues tcgen05.mma ──</span></div><div class="cb-line" data-ln="34">    <span class="kw">if</span> warp_id == <span class="num">0</span>:</div><div class="cb-line" data-ln="35">        <span class="kw">with</span> Tx.<span class="fn">thread</span>(parent=<span class="str">"warp"</span>)[Tx.ptx.<span class="fn">elect_sync</span>()]:</div><div class="cb-line" data-ln="36">            Tx.<span class="fn">gemm_async</span>(tmem[:,:BLK_N], Asmem[:,:], Bsmem[:,:],</div><div class="cb-line" data-ln="37">                          accum=<span class="kw">False</span>, dispatch=<span class="str">"tcgen05"</span>, cta_group=<span class="num">1</span>)</div><div class="cb-line" data-ln="38">            Tx.ptx.tcgen05.<span class="fn">commit</span>(mma_bar, cta_group=<span class="num">1</span>)</div><div class="cb-line" data-ln="39">    Tx.ptx.mbarrier.<span class="fn">try_wait</span>(mma_bar, phase_mma)</div><div class="cb-line" data-ln="40">    Tx.cuda.<span class="fn">cta_sync</span>()</div><div class="cb-line" data-ln="41">    Tx.ptx.tcgen05.fence.<span class="fn">after_thread_sync</span>()</div></div><div class="cb-region" data-region="write" style="border-left-color:#d97706"><div class="cb-line" data-ln="43">    <span class="cmt"># ── Writeback: TMEM → registers → GMEM ──</span></div><div class="cb-line" data-ln="44">    Dreg = Tx.<span class="fn">alloc_local</span>((BLK_N,), <span class="str">"f32"</span>)</div><div class="cb-line" data-ln="45">    Dreg_f16 = Tx.<span class="fn">alloc_local</span>((BLK_N,), d_type)</div><div class="cb-line" data-ln="46">    <span class="kw">with</span> Tx.<span class="fn">warpgroup</span>():</div><div class="cb-line" data-ln="47">        Tx.<span class="fn">copy</span>(Dreg_wg[:,:], tmem[:,:BLK_N])       <span class="cmt"># TMEM → registers</span></div><div class="cb-line" data-ln="48">        Tx.cuda.<span class="fn">cta_sync</span>()</div><div class="cb-line" data-ln="49">    <span class="kw">with</span> Tx.<span class="fn">thread</span>():</div><div class="cb-line" data-ln="50">        Tx.<span class="fn">cast</span>(Dreg_f16[:], Dreg[:])                <span class="cmt"># f32 → f16</span></div></div></pre>
+  </div>
+
+  <div class="info-panel">
+    <h3>Code Regions</h3>
+    <div id="region-btns"><button class="region-btn" data-key="setup"><span class="dot" style="background:#6b7280"></span>Setup &amp; Init</button><button class="region-btn" data-key="load"><span class="dot" style="background:#3b82f6"></span>Sync Load</button><button class="region-btn" data-key="mma"><span class="dot" style="background:#059669"></span>MMA Compute</button><button class="region-btn" data-key="write"><span class="dot" style="background:#d97706"></span>Writeback</button></div>
+    <div class="desc-box" id="desc-box">
+      <div class="title">Overview</div>
+      <div>The simplest GEMM: one 128×128×64 tile, fully synchronous. All 128 threads sync-load A,B from GMEM→SMEM, one elected thread issues MMA, all threads writeback.</div>
+      <div class="key-point">This is the skeleton — every later step builds on this structure.</div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  var code = String.raw`with Tx.kernel():
+    bx, by = Tx.cta_id([M // BLK_M, N // BLK_N], parent="kernel")
+    wg_id = Tx.warpgroup_id([1], parent="cta")
+    warp_id = Tx.warp_id([4], parent="warpgroup")
+    lane_id = Tx.thread_id([32], parent="warp")
+
+    # ── Shared memory allocation ──
+    pool = Tx.PoolAllocator()
+    tmem_addr = pool.alloc((1,), "uint32")
+    mma_bar = pool.alloc((1,), "uint64", align=8)   # MMA done barrier
+    Asmem = pool.alloc((BLK_M, BLK_K), a_type, layout=A_layout)
+    Bsmem = pool.alloc((BLK_N, BLK_K), b_type, layout=B_layout)
+    pool.commit()
+
+    # ── Init barrier + allocate TMEM ──
+    if warp_id == 0:
+        if lane_id == 0:
+            Tx.ptx.mbarrier.init(mma_bar, 1)
+        Tx.ptx.tcgen05.alloc(tmem_addr, n_cols=512, cta_group=1)
+    Tx.ptx.fence.proxy_async("shared::cta")
+    Tx.ptx.fence.mbarrier_init()
+    Tx.cuda.cta_sync()
+
+    tmem = Tx.decl_buffer((128, 512), "f32", scope="tmem")
+
+    # ── Sync load: all threads copy GMEM → SMEM ──
+    with Tx.cta():
+        Tx.copy(Asmem[:,:], A[m_st:m_st+BLK_M, 0:BLK_K])
+        Tx.copy(Bsmem[:,:], B[n_st:n_st+BLK_N, 0:BLK_K])
+    Tx.cuda.cta_sync()
+    Tx.ptx.tcgen05.fence.after_thread_sync()
+
+    # ── MMA: one thread issues tcgen05.mma ──
+    if warp_id == 0:
+        with Tx.thread(parent="warp")[Tx.ptx.elect_sync()]:
+            Tx.gemm_async(tmem[:,:BLK_N], Asmem[:,:], Bsmem[:,:],
+                          accum=False, dispatch="tcgen05", cta_group=1)
+            Tx.ptx.tcgen05.commit(mma_bar, cta_group=1)
+    Tx.ptx.mbarrier.try_wait(mma_bar, phase_mma)
+    Tx.cuda.cta_sync()
+    Tx.ptx.tcgen05.fence.after_thread_sync()
+
+    # ── Writeback: TMEM → registers → GMEM ──
+    Dreg = Tx.alloc_local((BLK_N,), "f32")
+    Dreg_f16 = Tx.alloc_local((BLK_N,), d_type)
+    with Tx.warpgroup():
+        Tx.copy(Dreg_wg[:,:], tmem[:,:BLK_N])       # TMEM → registers
+        Tx.cuda.cta_sync()
+    with Tx.thread():
+        Tx.cast(Dreg_f16[:], Dreg[:])                # f32 → f16
+        Tx.copy(D[m_thr, n_st:n_st+BLK_N], Dreg_f16[:])  # → GMEM`;
+
+  var regions = [
+    { key: 'setup', label: 'Setup & Init',     color: '#6b7280', start: 1,  end: 24 },
+    { key: 'load',  label: 'Sync Load',        color: '#3b82f6', start: 26, end: 31 },
+    { key: 'mma',   label: 'MMA Compute',      color: '#059669', start: 33, end: 41 },
+    { key: 'write', label: 'Writeback',         color: '#d97706', start: 43, end: 50 }
+  ];
+
+  var descriptions = {
+    setup: {
+      title: 'Setup & Initialization',
+      html: '<p>Declare scope IDs: each CTA gets a (bx,by) tile coordinate, 1 warpgroup with 4 warps of 32 threads.</p>' +
+            '<p><code>PoolAllocator</code> manages shared memory: allocates barrier, A/B tile buffers with swizzled layout.</p>' +
+            '<p><code>mma_bar</code> &mdash; signals "MMA is done, TMEM has result".</p>' +
+            '<p><code>tcgen05.alloc</code> &mdash; allocates 512 columns of Tensor Memory (TMEM) for the accumulator.</p>' +
+            '<div class="key-point">TMEM is a new Blackwell memory: private to the Tensor Core, 128 rows &times; 512 cols of f32.</div>'
+    },
+    load: {
+      title: 'Sync Load: GMEM → SMEM',
+      html: '<p><code>with Tx.cta()</code> &mdash; all 128 threads participate in the copy collectively.</p>' +
+            '<p>Each thread loads a portion of the 128&times;64 A tile and 128&times;64 B tile from global memory into shared memory.</p>' +
+            '<p><code>cta_sync()</code> &mdash; barrier to ensure all data is in SMEM before MMA reads it.</p>' +
+            '<div class="key-point">This is the bottleneck: 128 threads doing memory copies. Step 4 replaces this with TMA (1 thread, hardware-driven).</div>'
+    },
+    mma: {
+      title: 'MMA Compute: SMEM → TMEM',
+      html: '<p><code>elect_sync()</code> &mdash; only 1 thread from warp 0 issues the MMA instruction.</p>' +
+            '<p><code>gemm_async</code> &mdash; tcgen05.mma reads A,B from SMEM, computes C = A &times; B, writes result to TMEM.</p>' +
+            '<p><code>tcgen05.commit(mma_bar)</code> &mdash; when MMA finishes, it signals the barrier.</p>' +
+            '<p><code>try_wait(mma_bar)</code> &mdash; all threads wait until MMA result is ready in TMEM.</p>' +
+            '<div class="key-point"><code>accum=False</code>: overwrite TMEM (first tile). In Step 2+, <code>accum=k!=0</code> accumulates across K tiles.</div>'
+    },
+    write: {
+      title: 'Writeback: TMEM → Registers → GMEM',
+      html: '<p><b>3-step sync path</b> (all threads participate):</p>' +
+            '<p>1. <code>Tx.copy(Dreg_wg, tmem)</code> &mdash; warpgroup-collective tcgen05.ld reads TMEM into f32 registers</p>' +
+            '<p>2. <code>Tx.cast(Dreg_f16, Dreg)</code> &mdash; each thread converts f32 → f16</p>' +
+            '<p>3. <code>Tx.copy(D[...], Dreg_f16)</code> &mdash; each thread writes its f16 row directly to GMEM</p>' +
+            '<div class="key-point">Step 4 adds a SMEM intermediate + TMA async store for this path. Step 7 runs writeback in a separate warpgroup.</div>'
+    }
+  };
+
+  var blockDefs = regions.map(function (r) {
+    return { key: r.key, start: r.start, end: r.end, color: r.color };
+  });
+
+  var container = document.getElementById('step1-code');
+  createCodeBlock(container, code, {
+    blockDefs: blockDefs,
+    onBlockClick: function (key) {
+      document.querySelectorAll('.region-btn').forEach(function (el) {
+        el.classList.toggle('active', el.dataset.key === key);
+      });
+      var d = descriptions[key];
+      if (d) {
+        document.getElementById('desc-box').innerHTML =
+          '<div class="title">' + d.title + '</div>' + d.html;
+      }
+    }
+  });
+
+  var btnsEl = document.getElementById('region-btns');
+  btnsEl.innerHTML = regions.map(function (r) {
+    return '<button class="region-btn" data-key="' + r.key + '">' +
+      '<span class="dot" style="background:' + r.color + '"></span>' +
+      r.label + '</button>';
+  }).join('');
+
+  btnsEl.querySelectorAll('.region-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var key = btn.dataset.key;
+      var region = container.querySelector('.cb-region[data-region="' + key + '"]');
+      if (region) region.click();
+    });
+  });
+})();
+</script>
+
+
+</body></html>

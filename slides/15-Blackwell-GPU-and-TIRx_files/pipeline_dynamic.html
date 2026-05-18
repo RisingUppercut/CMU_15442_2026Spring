@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<!-- saved from url=(0073)https://mlsyscourse.org/slides/tirx-gemm/demo/pipeline_dynamic.html?embed -->
+<html lang="en" data-immersive-translate-page-theme="light"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pipeline Demo</title>
+<link rel="stylesheet" href="./viz-base.css">
+<script src="./viz-base.js.下载"></script>
+<style>
+  body { padding: 18px 28px; max-width: 1300px; margin: 0 auto; }
+
+  .timeline-area {
+    border: 1px solid var(--border); border-radius: 10px;
+    background: var(--surface); padding: 16px 18px;
+    box-shadow: 0 1px 3px rgba(0,0,0,.04);
+    margin-bottom: 14px; overflow-x: auto;
+  }
+
+  .tl-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 12px;
+  }
+  .tl-title { font-size: 14px; font-weight: 700; }
+  .tl-controls { display: flex; gap: 6px; align-items: center; }
+  .tl-btn {
+    padding: 5px 12px; border-radius: 6px; border: 1px solid var(--border);
+    background: var(--surface); color: var(--text); font-size: 12px;
+    font-weight: 600; cursor: pointer; font-family: inherit;
+    transition: all .15s;
+  }
+  .tl-btn:hover { background: #f1f5f9; }
+  .tl-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .tl-step-label {
+    font-size: 12px; font-weight: 600; color: var(--dim);
+    font-family: 'SF Mono','Fira Code',monospace;
+    min-width: 80px; text-align: center;
+  }
+
+  .tl-grid {
+    display: grid;
+    grid-template-columns: 100px 1fr;
+    gap: 4px 0;
+    align-items: center;
+    min-width: 700px;
+  }
+  .tl-label {
+    font-size: 12px; font-weight: 600; text-align: right;
+    padding-right: 12px; white-space: nowrap;
+  }
+  .tl-label.l-tma { color: #3b82f6; }
+  .tl-label.l-mma { color: #059669; }
+  .tl-label.l-wb  { color: #d97706; }
+
+  .tl-row {
+    display: flex; height: 28px; gap: 2px; position: relative;
+  }
+  .tl-cell {
+    border-radius: 4px; display: flex; align-items: center;
+    justify-content: center; font-size: 10px; font-weight: 700;
+    color: #fff; transition: all .4s ease; min-width: 0;
+    overflow: hidden; white-space: nowrap;
+  }
+  .tl-cell.tma  { background: #3b82f6; }
+  .tl-cell.mma  { background: #059669; }
+  .tl-cell.wb   { background: #d97706; }
+  .tl-cell.idle { background: #e5e7eb; color: #9ca3af; }
+  .tl-cell.active-cell {
+    box-shadow: 0 0 0 2px #fff, 0 0 0 4px currentColor;
+    transform: scaleY(1.15);
+    z-index: 2;
+  }
+  .tl-cell.tma.active-cell { background: #93c5fd; }
+  .tl-cell.mma.active-cell { background: #6ee7b7; }
+  .tl-cell.wb.active-cell  { background: #fcd34d; }
+
+  .tl-time-axis {
+    grid-column: 2; display: flex; gap: 2px;
+    margin-top: 4px;
+  }
+  .tl-tick {
+    flex: 1; text-align: center; font-size: 9px;
+    color: var(--dim); font-weight: 600;
+    font-family: 'SF Mono','Fira Code',monospace;
+    border-top: 1px solid #e5e7eb; padding-top: 3px;
+  }
+
+  .sum-section-label {
+    font-size: 13px; font-weight: 700; color: #94a3b8;
+    text-transform: uppercase; letter-spacing: .08em;
+    margin: 0 0 8px;
+  }
+  .barrier-legend {
+    display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px;
+    margin-bottom: 14px;
+  }
+  .bl-card {
+    border: 1px solid var(--border); border-radius: 8px;
+    padding: 10px 12px; background: var(--surface);
+  }
+  .bl-card h4 {
+    font-size: 13px; font-weight: 700; margin-bottom: 6px;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .bl-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .bl-card .bl-desc {
+    font-size: 12.5px; color: #475569; line-height: 1.55;
+  }
+  .bl-card .bl-barrier {
+    display: inline-block; margin-top: 6px; padding: 3px 8px;
+    border-radius: 3px; font-size: 12px; font-weight: 600;
+    font-family: 'SF Mono','Fira Code',monospace;
+  }
+  .bl-barrier.b-tma { background: #dbeafe; color: #1e40af; }
+  .bl-barrier.b-tc  { background: #d1fae5; color: #065f46; }
+  .bl-barrier.b-mb  { background: #fef3c7; color: #92400e; }
+
+  .insight {
+    padding: 12px 16px;
+    background: #f0fdf4; border-left: 4px solid #059669;
+    border-radius: 0 8px 8px 0;
+    font-size: 13.5px; line-height: 1.65; color: #065f46;
+  }
+  .insight strong { color: #047857; }
+
+  @media(max-width:900px) {
+    .barrier-legend { grid-template-columns: 1fr; }
+  }
+</style>
+<style data-id="immersive-translate-input-injected-css"></style></head>
+<body>
+  <h1>Pipeline: Overlap Load, Compute, Writeback</h1>
+  <p class="sub">With warp specialization, all three stages run concurrently</p>
+
+  <div class="timeline-area">
+    <div class="tl-header">
+      <div class="tl-title">Execution Timeline</div>
+      <div class="tl-controls">
+        <button class="tl-btn" id="btnSync">No Pipeline</button>
+        <button class="tl-btn active" id="btnPipe">Pipelined</button>
+        <span class="tl-step-label" id="stepLabel"></span>
+        <button class="tl-btn" id="btnPlay">▶ Play</button>
+      </div>
+    </div>
+
+    <div class="tl-grid" id="tlGrid">
+      <div class="tl-label l-tma">TMA Load</div>
+      <div class="tl-row" id="rowTMA"><div class="tl-cell tma" data-t="0" style="flex: 1 1 0%;">L0</div><div class="tl-cell tma" data-t="1" style="flex: 1 1 0%;">L1</div><div class="tl-cell tma" data-t="2" style="flex: 1 1 0%;">L2</div><div class="tl-cell tma" data-t="3" style="flex: 1 1 0%;">L3</div><div class="tl-cell tma" data-t="4" style="flex: 1 1 0%;">L4</div><div class="tl-cell tma" data-t="5" style="flex: 1 1 0%;">L5</div><div class="tl-cell tma" data-t="6" style="flex: 1 1 0%;">L6</div><div class="tl-cell tma" data-t="7" style="flex: 1 1 0%;">L7</div><div class="tl-cell idle" data-t="8" style="flex: 1 1 0%;"></div><div class="tl-cell idle" data-t="9" style="flex: 1 1 0%;"></div></div>
+
+      <div class="tl-label l-mma">MMA Compute</div>
+      <div class="tl-row" id="rowMMA"><div class="tl-cell idle" data-t="0" style="flex: 1 1 0%;"></div><div class="tl-cell mma" data-t="1" style="flex: 1 1 0%;">C0</div><div class="tl-cell mma" data-t="2" style="flex: 1 1 0%;">C1</div><div class="tl-cell mma" data-t="3" style="flex: 1 1 0%;">C2</div><div class="tl-cell mma" data-t="4" style="flex: 1 1 0%;">C3</div><div class="tl-cell mma" data-t="5" style="flex: 1 1 0%;">C4</div><div class="tl-cell mma" data-t="6" style="flex: 1 1 0%;">C5</div><div class="tl-cell mma" data-t="7" style="flex: 1 1 0%;">C6</div><div class="tl-cell mma" data-t="8" style="flex: 1 1 0%;">C7</div><div class="tl-cell idle" data-t="9" style="flex: 1 1 0%;"></div></div>
+
+      <div class="tl-label l-wb">Writeback</div>
+      <div class="tl-row" id="rowWB"><div class="tl-cell idle" data-t="0" style="flex: 1 1 0%;"></div><div class="tl-cell idle" data-t="1" style="flex: 1 1 0%;"></div><div class="tl-cell idle" data-t="2" style="flex: 1 1 0%;"></div><div class="tl-cell idle" data-t="3" style="flex: 1 1 0%;"></div><div class="tl-cell idle" data-t="4" style="flex: 1 1 0%;"></div><div class="tl-cell idle" data-t="5" style="flex: 1 1 0%;"></div><div class="tl-cell idle" data-t="6" style="flex: 1 1 0%;"></div><div class="tl-cell idle" data-t="7" style="flex: 1 1 0%;"></div><div class="tl-cell idle" data-t="8" style="flex: 1 1 0%;"></div><div class="tl-cell wb" data-t="9" style="flex: 1 1 0%;">WB</div></div>
+
+      <div></div>
+      <div class="tl-time-axis" id="timeAxis"><div class="tl-tick">t0</div><div class="tl-tick">t1</div><div class="tl-tick">t2</div><div class="tl-tick">t3</div><div class="tl-tick">t4</div><div class="tl-tick">t5</div><div class="tl-tick">t6</div><div class="tl-tick">t7</div><div class="tl-tick">t8</div><div class="tl-tick">t9</div></div>
+    </div>
+  </div>
+
+  <div class="insight">
+    <strong>Why pipeline?</strong> Without pipelining, each tile waits for Load → Compute → Store to finish before starting the next. With 3+ pipeline stages, TMA loads tile <em>i+2</em> while MMA computes tile <em>i+1</em> while Writeback stores tile <em>i</em> — hiding latency and saturating all hardware units simultaneously.
+  </div>
+
+<script>
+(function() {
+  var K_TILES = 8;
+
+  var syncData = {
+    tma: [], mma: [], wb: []
+  };
+  var pipeData = {
+    tma: [], mma: [], wb: []
+  };
+
+  /* Build sync schedule: sequential Load→Compute per tile, then Writeback */
+  for (var i = 0; i < K_TILES; i++) {
+    syncData.tma.push({ t: i * 2, label: 'L' + i, type: 'tma' });
+    syncData.mma.push({ t: i * 2 + 1, label: 'C' + i, type: 'mma' });
+  }
+  syncData.wb.push({ t: K_TILES * 2, label: 'WB', type: 'wb' });
+  var syncTotal = K_TILES * 2 + 1;
+
+  /* Build pipelined schedule: overlap */
+  for (var j = 0; j < K_TILES; j++) {
+    pipeData.tma.push({ t: j, label: 'L' + j, type: 'tma' });
+    pipeData.mma.push({ t: j + 1, label: 'C' + j, type: 'mma' });
+  }
+  pipeData.wb.push({ t: K_TILES + 1, label: 'WB', type: 'wb' });
+  var pipeTotal = K_TILES + 2;
+
+  var mode = 'pipe';
+  var animStep = -1;
+  var animTimer = null;
+
+  function totalSlots() { return mode === 'sync' ? syncTotal : pipeTotal; }
+  function getData()    { return mode === 'sync' ? syncData  : pipeData; }
+
+  function renderRow(rowEl, events, slots) {
+    rowEl.innerHTML = '';
+    var filled = {};
+    events.forEach(function(e) { filled[e.t] = e; });
+    for (var t = 0; t < slots; t++) {
+      var cell = document.createElement('div');
+      cell.className = 'tl-cell';
+      cell.style.flex = '1';
+      cell.dataset.t = t;
+      if (filled[t]) {
+        cell.classList.add(filled[t].type);
+        cell.textContent = filled[t].label;
+      } else {
+        cell.classList.add('idle');
+      }
+      rowEl.appendChild(cell);
+    }
+  }
+
+  function renderTimeAxis(slots) {
+    var axis = document.getElementById('timeAxis');
+    axis.innerHTML = '';
+    for (var t = 0; t < slots; t++) {
+      var tick = document.createElement('div');
+      tick.className = 'tl-tick';
+      tick.textContent = 't' + t;
+      axis.appendChild(tick);
+    }
+  }
+
+  function render() {
+    var d = getData();
+    var slots = totalSlots();
+    renderRow(document.getElementById('rowTMA'), d.tma, slots);
+    renderRow(document.getElementById('rowMMA'), d.mma, slots);
+    renderRow(document.getElementById('rowWB'),  d.wb,  slots);
+    renderTimeAxis(slots);
+    clearHighlight();
+  }
+
+  function clearHighlight() {
+    var cells = document.querySelectorAll('.tl-cell');
+    for (var i = 0; i < cells.length; i++) {
+      cells[i].classList.remove('active-cell');
+    }
+    document.getElementById('stepLabel').textContent = '';
+  }
+
+  function highlightStep(t) {
+    clearHighlight();
+    var cells = document.querySelectorAll('.tl-cell');
+    var active = 0;
+    for (var i = 0; i < cells.length; i++) {
+      if (parseInt(cells[i].dataset.t) === t && !cells[i].classList.contains('idle')) {
+        cells[i].classList.add('active-cell');
+        active++;
+      }
+    }
+    document.getElementById('stepLabel').textContent = 't=' + t +
+      (active > 1 ? ' (' + active + ' concurrent)' : '');
+  }
+
+  function play() {
+    stopAnim();
+    animStep = -1;
+    var slots = totalSlots();
+    document.getElementById('btnPlay').textContent = '⏸ Pause';
+    animTimer = setInterval(function() {
+      animStep++;
+      if (animStep >= slots) { stopAnim(); return; }
+      highlightStep(animStep);
+    }, 700);
+  }
+
+  function stopAnim() {
+    clearInterval(animTimer);
+    animTimer = null;
+    document.getElementById('btnPlay').textContent = '▶ Play';
+  }
+
+  document.getElementById('btnSync').addEventListener('click', function() {
+    mode = 'sync'; stopAnim();
+    document.getElementById('btnSync').classList.add('active');
+    document.getElementById('btnPipe').classList.remove('active');
+    render();
+  });
+  document.getElementById('btnPipe').addEventListener('click', function() {
+    mode = 'pipe'; stopAnim();
+    document.getElementById('btnPipe').classList.add('active');
+    document.getElementById('btnSync').classList.remove('active');
+    render();
+  });
+  document.getElementById('btnPlay').addEventListener('click', function() {
+    if (animTimer) { stopAnim(); clearHighlight(); }
+    else play();
+  });
+
+  render();
+})();
+</script>
+
+
+</body></html>

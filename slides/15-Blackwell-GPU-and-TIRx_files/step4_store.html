@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<!-- saved from url=(0068)https://mlsyscourse.org/slides/tirx-gemm/demo/step4_store.html?embed -->
+<html lang="en" data-immersive-translate-page-theme="light"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Step 4: TMA Async Store</title>
+<link rel="stylesheet" href="./viz-base.css">
+<link rel="stylesheet" href="./code-highlight.css">
+<script src="./viz-base.js.下载"></script>
+<script src="./code-highlight.js.下载"></script>
+<style>
+  body { padding: 1.2rem 2.5rem; max-width: 1400px; margin: 0 auto; }
+
+  /* ── Dataflow Pipeline ── */
+  .flow-section {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 1rem 1.5rem; margin-bottom: 1.2rem;
+    box-shadow: 0 1px 3px rgba(0,0,0,.06);
+  }
+  .flow-section h2 {
+    font-size: 0.82rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.06em; color: var(--dim); margin-bottom: 0.8rem;
+  }
+  .flow {
+    display: flex; align-items: center; justify-content: center; gap: 0;
+    flex-wrap: nowrap;
+  }
+  .stage {
+    padding: 0.6rem 0.9rem; border-radius: 8px; text-align: center;
+    font-size: 0.78rem; font-weight: 700; min-width: 90px;
+    border: 2px solid; position: relative;
+  }
+  .stage .sub { font-size: 0.65rem; font-weight: 500; opacity: 0.8; margin-top: 2px; }
+  .s-tmem  { background: #fef3c7; border-color: #d97706; color: #92400e; }
+  .s-reg   { background: #dbeafe; border-color: #3b82f6; color: #1e40af; }
+  .s-cast  { background: #e0e7ff; border-color: #6366f1; color: #3730a3; }
+  .s-smem  { background: #d1fae5; border-color: #059669; color: #065f46; }
+  .s-tma   { background: #fce7f3; border-color: #db2777; color: #9d174d; }
+  .s-gmem  { background: #f3f4f6; border-color: #6b7280; color: #374151; }
+
+  .arrow-h {
+    display: flex; flex-direction: column; align-items: center;
+    min-width: 70px; flex-shrink: 0; padding: 0 4px;
+  }
+  .arrow-h .line { width: 36px; height: 2px; background: #94a3b8; }
+  .arrow-h .head { width: 0; height: 0; border-top: 5px solid transparent; border-bottom: 5px solid transparent; border-left: 7px solid #94a3b8; }
+  .arrow-h .lbl {
+    font-size: 0.6rem; color: #6b7280; font-weight: 600; white-space: nowrap;
+    margin-bottom: 2px;
+  }
+
+  /* ── Code blocks ── */
+  .code-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+    margin-bottom: 1rem;
+  }
+  .code-col {
+    border-radius: 8px; overflow: hidden;
+    border: 1px solid var(--border); background: #1e1e2e;
+    display: flex; flex-direction: column;
+  }
+  .code-header {
+    padding: 7px 12px; font-size: 12px; font-weight: 700;
+    letter-spacing: 0.02em; text-align: center;
+  }
+  .code-header.phase1 { background: rgba(217,119,6,0.22); color: #fbbf24; }
+  .code-header.phase2 { background: rgba(5,150,105,0.22); color: #6ee7b7; }
+  .code-body {
+    padding: 10px 14px; font-family: 'SF Mono','Fira Code',monospace;
+    font-size: 11.5px; line-height: 1.75; color: #cdd6f4;
+    white-space: pre; overflow-x: auto; flex: 1;
+    max-height: 340px; overflow-y: auto;
+  }
+  .code-body .hl  { background: rgba(5,150,105,0.12); display: block; padding: 0 2px; border-radius: 2px; }
+
+  /* ── Insights ── */
+  .insights {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem;
+  }
+  .insight {
+    padding: 0.8rem 1rem; border-radius: 8px;
+    font-size: 0.82rem; font-weight: 500; line-height: 1.5;
+    border-left: 4px solid; background: var(--surface);
+    border-top: 1px solid var(--border);
+    border-right: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+  .insight code {
+    font-family: 'SF Mono','Fira Code',monospace; font-size: 0.78rem;
+    background: rgba(0,0,0,0.06); padding: 0.1em 0.35em; border-radius: 3px;
+  }
+  .insight-orange { border-left-color: #d97706; }
+  .insight-green  { border-left-color: #059669; }
+  .insight-purple { border-left-color: #7c3aed; }
+  .itag {
+    display: inline-block; font-size: 0.7rem; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.25rem;
+  }
+  .insight-orange .itag { color: #d97706; }
+  .insight-green  .itag { color: #059669; }
+  .insight-purple .itag { color: #7c3aed; }
+
+  @media(max-width:800px) {
+    .code-grid { grid-template-columns: 1fr; }
+    .insights { grid-template-columns: 1fr; }
+  }
+</style>
+<style data-id="immersive-translate-input-injected-css"></style></head>
+<body>
+
+<h1>Step 4: TMA Async Store (Writeback)</h1>
+<p class="sub">TMEM cannot write to GMEM directly — data flows through Registers and SMEM</p>
+
+<!-- ════ Dataflow Diagram ════ -->
+<div class="flow-section">
+  <h2>Writeback Data Path</h2>
+  <div class="flow">
+    <div class="stage s-tmem">TMEM<div class="sub">fp32 accum</div></div>
+    <div class="arrow-h"><div class="lbl">8-col chunk</div><div style="display:flex;align-items:center;"><div class="line"></div><div class="head"></div></div></div>
+    <div class="stage s-reg">Register<div class="sub">fp32</div></div>
+    <div class="arrow-h"><div class="lbl">cast</div><div style="display:flex;align-items:center;"><div class="line"></div><div class="head"></div></div></div>
+    <div class="stage s-cast">Register<div class="sub">fp16</div></div>
+    <div class="arrow-h"><div class="lbl">all threads</div><div style="display:flex;align-items:center;"><div class="line"></div><div class="head"></div></div></div>
+    <div class="stage s-smem">SMEM<div class="sub">Dsmem (128×64)</div></div>
+    <div class="arrow-h"><div class="lbl">TMA store</div><div style="display:flex;align-items:center;"><div class="line"></div><div class="head"></div></div></div>
+    <div class="stage s-gmem">GMEM<div class="sub">D[M, N]</div></div>
+  </div>
+</div>
+
+<!-- ════ Two-Phase Code ════ -->
+<div class="code-grid">
+  <div class="code-col">
+    <div class="code-header phase1">Phase 1: TMEM → Registers (chunked 8-col)</div>
+    <div class="code-body code-dark" id="phase1-code"><div><span class="cmt"># Allocate full-row fp16 buffer for 128 cols</span></div><div>Dreg_16b = Tx.<span class="fn">alloc_local</span>((<span class="num">128</span>,), <span class="str">"float16"</span>)</div><div><span class="cmt"># Loop 16 times (128 / 8 = 16)</span></div><div><span class="kw">for</span> no <span class="kw">in</span> Tx.<span class="fn">unroll</span>(<span class="num">128</span> // <span class="num">8</span>):</div><div>    <span class="cmt"># Allocate 8-col fp32 temp register</span></div><div>    Dreg = Tx.<span class="fn">alloc_local</span>((<span class="num">8</span>,), <span class="str">"float32"</span>)</div><div>    <span class="cmt"># Warpgroup collective: 128 threads read 8 cols from TMEM</span></div><div>    <span class="kw">with</span> Tx.<span class="fn">warpgroup</span>():</div><div>        Dreg_wg = Dreg.<span class="fn">view</span>(<span class="num">128</span>, <span class="num">8</span>, layout=...)</div><div class="hl">        Tx.<span class="fn">copy</span>(Dreg_wg[:,:], tmem[:, no*<span class="num">8</span>:no*<span class="num">8</span>+<span class="num">8</span>])</div><div>    <span class="cmt"># Per-thread cast: fp32 → fp16</span></div><div>    <span class="kw">with</span> Tx.<span class="fn">thread</span>():</div><div class="hl">        Tx.<span class="fn">cast</span>(Dreg_16b[no*<span class="num">8</span>:(no+<span class="num">1</span>)*<span class="num">8</span>], Dreg[:])</div></div>
+  </div>
+
+  <div class="code-col">
+    <div class="code-header phase2">Phase 2: Registers → SMEM → TMA Store</div>
+    <div class="code-body code-dark" id="phase2-code"><div><span class="cmt"># Loop 2 times (128 / 64 = 2)</span></div><div><span class="kw">for</span> no <span class="kw">in</span> Tx.<span class="fn">unroll</span>(<span class="num">128</span> // <span class="num">64</span>):</div><div>    <span class="cmt"># Each thread writes its 64-col slice to SMEM</span></div><div>    <span class="kw">with</span> Tx.<span class="fn">thread</span>():</div><div class="hl">        Tx.<span class="fn">copy</span>(Dsmem[warp_id*<span class="num">32</span>+lane_id, :],</div><div class="hl">                Dreg_16b[no*<span class="num">64</span>:(no+<span class="num">1</span>)*<span class="num">64</span>])</div><div>        <span class="cmt"># Make SMEM writes visible to TMA engine</span></div><div>        Tx.ptx.fence.<span class="fn">proxy_async</span>(<span class="str">"shared::cta"</span>)</div><div>    <span class="cmt"># Wait all threads done writing SMEM</span></div><div>    Tx.cuda.<span class="fn">warpgroup_sync</span>(<span class="num">10</span>)</div><div>    <span class="cmt"># Elect 1 thread to issue TMA store: SMEM → GMEM</span></div><div>    <span class="kw">with</span> Tx.<span class="fn">thread</span>(parent=<span class="str">"warpgroup"</span>)[Tx.ptx.<span class="fn">elect_sync</span>()]:</div><div>        n_st_epi = Tx.<span class="fn">meta_var</span>(n_st + no * <span class="num">64</span>)</div><div class="hl">        Tx.<span class="fn">copy_async</span>(D[m_st:m_st+<span class="num">128</span>, n_st_epi:n_st_epi+<span class="num">64</span>],</div><div class="hl">                      Dsmem[:,:], dispatch=<span class="str">"tma"</span>)</div><div>        <span class="cmt"># Commit and wait for TMA store completion</span></div><div>        Tx.ptx.cp_async.bulk.<span class="fn">commit_group</span>()</div><div>        Tx.ptx.cp_async.bulk.<span class="fn">wait_group</span>(<span class="num">0</span>)</div><div>    <span class="cmt"># Sync before next iteration</span></div><div>    Tx.cuda.<span class="fn">warpgroup_sync</span>(<span class="num">10</span>)</div></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  var phase1 = String.raw`# Allocate full-row fp16 buffer for 128 cols
+Dreg_16b = Tx.alloc_local((128,), "float16")
+# Loop 16 times (128 / 8 = 16)
+for no in Tx.unroll(128 // 8):
+    # Allocate 8-col fp32 temp register
+    Dreg = Tx.alloc_local((8,), "float32")
+    # Warpgroup collective: 128 threads read 8 cols from TMEM
+    with Tx.warpgroup():
+        Dreg_wg = Dreg.view(128, 8, layout=...)
+        Tx.copy(Dreg_wg[:,:], tmem[:, no*8:no*8+8])
+    # Per-thread cast: fp32 → fp16
+    with Tx.thread():
+        Tx.cast(Dreg_16b[no*8:(no+1)*8], Dreg[:])`;
+
+  var phase2 = String.raw`# Loop 2 times (128 / 64 = 2)
+for no in Tx.unroll(128 // 64):
+    # Each thread writes its 64-col slice to SMEM
+    with Tx.thread():
+        Tx.copy(Dsmem[warp_id*32+lane_id, :],
+                Dreg_16b[no*64:(no+1)*64])
+        # Make SMEM writes visible to TMA engine
+        Tx.ptx.fence.proxy_async("shared::cta")
+    # Wait all threads done writing SMEM
+    Tx.cuda.warpgroup_sync(10)
+    # Elect 1 thread to issue TMA store: SMEM → GMEM
+    with Tx.thread(parent="warpgroup")[Tx.ptx.elect_sync()]:
+        n_st_epi = Tx.meta_var(n_st + no * 64)
+        Tx.copy_async(D[m_st:m_st+128, n_st_epi:n_st_epi+64],
+                      Dsmem[:,:], dispatch="tma")
+        # Commit and wait for TMA store completion
+        Tx.ptx.cp_async.bulk.commit_group()
+        Tx.ptx.cp_async.bulk.wait_group(0)
+    # Sync before next iteration
+    Tx.cuda.warpgroup_sync(10)`;
+
+  renderAnnotatedCode(document.getElementById('phase1-code'), phase1,
+    { 10: 'hl', 13: 'hl' });
+  renderAnnotatedCode(document.getElementById('phase2-code'), phase2,
+    { 5: 'hl', 6: 'hl', 14: 'hl', 15: 'hl' });
+})();
+</script>
+
+<!-- ════ Insights ════ -->
+<div class="insights">
+  <div class="insight insight-orange">
+    <div class="itag">Why 8-col chunks?</div>
+    <code>tcgen05.ld</code> reads max 8 cols per warpgroup copy. Loop <code>128/8=16</code> times for full row.
+  </div>
+  <div class="insight insight-green">
+    <div class="itag">Why go through SMEM?</div>
+    TMA only accesses <strong>shared memory</strong>. Path: TMEM→Reg→cast fp16→SMEM→TMA store→GMEM.
+  </div>
+  <div class="insight insight-purple">
+    <div class="itag">EPI_N=64 tiling</div>
+    <code>Dsmem</code> is 128×64, not 128×128 — halves SMEM. Loop <code>128/64=2</code> times, each TMA-storing a 128×64 tile.
+  </div>
+</div>
+
+
+
+</body></html>

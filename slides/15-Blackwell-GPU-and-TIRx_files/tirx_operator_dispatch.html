@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<!-- saved from url=(0079)https://mlsyscourse.org/slides/tirx-gemm/demo/tirx_operator_dispatch.html?embed -->
+<html lang="en" data-immersive-translate-page-theme="light"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TIRx: Deterministic Op Dispatch over Tiles</title>
+<link rel="stylesheet" href="./viz-base.css">
+<link rel="stylesheet" href="./code-highlight.css">
+<script src="./code-highlight.js.下载"></script>
+<style>
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    padding: 0.5rem 1rem;
+  }
+
+  .layout {
+    display: grid;
+    grid-template-columns: 70% 30%;
+    gap: 1rem;
+    align-items: start;
+  }
+
+  pre.code-panel {
+    margin: 0;
+    max-height: 70vh;
+    overflow: auto;
+    padding: 1rem 1.2rem;
+    font-size: 10.5px;
+    line-height: 1.4;
+    tab-size: 4;
+    white-space: pre;
+  }
+
+  /* Info panel */
+  .info-panel {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1rem;
+    min-height: 0;
+    overflow: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .info-border {
+    height: 3px;
+    border-radius: var(--radius) var(--radius) 0 0;
+    margin: -1rem -1rem 0.2rem -1rem;
+    transition: background 0.2s;
+    background: var(--border);
+  }
+
+  .tabs { display: grid; gap: 0.45rem; }
+
+  .tab {
+    width: 100%;
+    border: 1px solid #cbd5e1;
+    border-radius: 10px;
+    background: #f8fafc;
+    color: #0f172a;
+    font: inherit;
+    text-align: left;
+    padding: 0.5rem 0.6rem;
+    cursor: pointer;
+    display: grid;
+    grid-template-columns: 22px minmax(0, 1fr);
+    gap: 0.5rem;
+    align-items: center;
+    transition: border-color 0.2s, background 0.2s;
+  }
+
+  .tab:hover { border-color: #94a3b8; background: #f1f5f9; }
+  .tab.active { background: #eef2ff; border-color: #6366f1; color: #1e1b4b; }
+
+  .tab-num {
+    display: inline-flex; width: 22px; height: 22px;
+    align-items: center; justify-content: center;
+    border-radius: 999px; font-size: 0.78rem; font-weight: 700;
+    background: #e2e8f0; color: #334155;
+  }
+  .tab.active .tab-num { background: #6366f1; color: #fff; }
+
+  .tab-text { font-size: 0.84rem; font-weight: 600; line-height: 1.2; }
+
+  .info-title { font-size: 1.08rem; font-weight: 600; margin: 0 0 0.45rem 0; color: #1e293b; }
+  .info-body { color: var(--text-muted); font-size: 0.9rem; line-height: 1.6; }
+
+</style>
+<style data-id="immersive-translate-input-injected-css"></style></head>
+<body>
+  <main class="layout">
+    <section>
+      <div class="cb-panel dark">
+        <div class="cb-header">TIRx: Deterministic Op Dispatch over Tiles</div>
+        <pre id="code-container" class="code-dark code-panel"><div class="cb-line cb-focus" data-ln="1" style="background: rgba(59, 130, 246, 0.2);">A_layout = Tx.<span class="fn">ComposeLayout</span>(</div><div class="cb-line cb-focus" data-ln="2" style="background: rgba(59, 130, 246, 0.2);">    Tx.<span class="fn">SwizzleLayout</span>(<span class="num">3</span>, <span class="num">3</span>, <span class="num">3</span>, swizzle_inner=<span class="kw">True</span>),</div><div class="cb-line cb-focus" data-ln="3" style="background: rgba(59, 130, 246, 0.2);">    Tx.<span class="fn">TileLayout</span>(Tx.<span class="fn">S</span>[(<span class="num">128</span>, <span class="num">1</span>, <span class="num">64</span>) : (<span class="num">64</span>, <span class="num">128</span> * <span class="num">64</span>, <span class="num">1</span>)]),</div><div class="cb-line cb-focus" data-ln="4" style="background: rgba(59, 130, 246, 0.2);">)</div><div class="cb-line cb-focus" data-ln="5" style="background: rgba(59, 130, 246, 0.2);">B_layout = Tx.<span class="fn">ComposeLayout</span>(</div><div class="cb-line cb-focus" data-ln="6" style="background: rgba(59, 130, 246, 0.2);">    Tx.<span class="fn">SwizzleLayout</span>(<span class="num">3</span>, <span class="num">3</span>, <span class="num">3</span>, swizzle_inner=<span class="kw">True</span>),</div><div class="cb-line cb-focus" data-ln="7" style="background: rgba(59, 130, 246, 0.2);">    Tx.<span class="fn">TileLayout</span>(Tx.<span class="fn">S</span>[(<span class="num">128</span>, <span class="num">1</span>, <span class="num">64</span>) : (<span class="num">64</span>, <span class="num">128</span> * <span class="num">64</span>, <span class="num">1</span>)]),</div><div class="cb-line cb-focus" data-ln="8" style="background: rgba(59, 130, 246, 0.2);">)</div><div class="cb-line cb-focus" data-ln="9" style="background: rgba(59, 130, 246, 0.2);">Dreg_layout = <span class="fn">TileLayout</span>(Tx.<span class="fn">S</span>[(<span class="num">128</span>, <span class="num">128</span>) : (<span class="num">1</span><span class="dec">@Tx.tid_in_wg</span>, <span class="num">1</span><span class="dec">@Tx.TCol</span>)])</div><div class="cb-line" data-ln="10">&nbsp;</div><div class="cb-line" data-ln="11"><span class="dec">@Tx.prim_func</span>(tirx=<span class="kw">True</span>)</div><div class="cb-line" data-ln="12"><span class="kw">def</span> <span class="fn">gemm_fp16</span>(A, B, D):</div><div class="cb-line" data-ln="13">  <span class="kw">with</span> Tx.<span class="fn">kernel</span>():</div><div class="cb-line" data-ln="14">    bx, by = Tx.<span class="fn">cta_id</span>([...], parent=<span class="str">"kernel"</span>)</div><div class="cb-line" data-ln="15">    wg_id = Tx.<span class="fn">warpgroup_id</span>([<span class="num">1</span>], parent=<span class="str">"cta"</span>)</div><div class="cb-line" data-ln="16">    warp_id = Tx.<span class="fn">warp_id</span>([<span class="num">4</span>], parent=<span class="str">"warpgroup"</span>)</div><div class="cb-line" data-ln="17">    lane_id = Tx.<span class="fn">thread_id</span>([<span class="num">32</span>], parent=<span class="str">"warp"</span>)</div><div class="cb-line" data-ln="18">&nbsp;</div><div class="cb-line" data-ln="19">    pool = Tx.<span class="fn">PoolAllocator</span>()</div><div class="cb-line cb-focus" data-ln="20" style="background: rgba(59, 130, 246, 0.2);">    Asmem = pool.<span class="fn">alloc</span>((<span class="num">128</span>,<span class="num">64</span>), <span class="str">"float16"</span>, layout=A_layout)</div><div class="cb-line cb-focus" data-ln="21" style="background: rgba(59, 130, 246, 0.2);">    Bsmem = pool.<span class="fn">alloc</span>((<span class="num">128</span>,<span class="num">64</span>), <span class="str">"float16"</span>, layout=B_layout)</div><div class="cb-line" data-ln="22">    pool.<span class="fn">commit</span>()</div><div class="cb-line" data-ln="23">    Tx.ptx.tcgen05.<span class="fn">alloc</span>(tmem_addr, n_cols=<span class="num">512</span>)</div><div class="cb-line" data-ln="24">&nbsp;</div><div class="cb-line" data-ln="25">    <span class="kw">with</span> Tx.<span class="fn">cta</span>():              <span class="cmt"># all 128 threads</span></div><div class="cb-line" data-ln="26">      Tx.<span class="fn">copy</span>(Asmem[:,:], A[:, :])</div><div class="cb-line" data-ln="27">      Tx.<span class="fn">copy</span>(Bsmem[:,:], B[:, :])</div><div class="cb-line" data-ln="28">    Tx.cuda.<span class="fn">cta_sync</span>()</div><div class="cb-line" data-ln="29">&nbsp;</div><div class="cb-line" data-ln="30">    <span class="kw">with</span> Tx.<span class="fn">thread</span>()[Tx.<span class="fn">elect_sync</span>()]:  <span class="cmt"># 1 thread</span></div><div class="cb-line" data-ln="31">      Tx.<span class="fn">gemm_async</span>(tmem[:,:], Asmem[:,:], Bsmem[:,:], accum=<span class="kw">False</span>, dispatch=<span class="str">"tcgen05"</span>, cta_group=<span class="num">1</span>)</div><div class="cb-line" data-ln="32">      Tx.ptx.tcgen05.<span class="fn">commit</span>(mma_bar, cta_group=<span class="num">1</span>)</div><div class="cb-line" data-ln="33">    Tx.ptx.mbarrier.<span class="fn">try_wait</span>(mma_bar, phase)</div><div class="cb-line" data-ln="34">&nbsp;</div><div class="cb-line" data-ln="35">    <span class="cmt"># write back</span></div><div class="cb-line" data-ln="36">    Dreg_thr = Tx.<span class="fn">alloc_local</span>((<span class="num">128</span>), <span class="str">"float32"</span>)</div><div class="cb-line" data-ln="37">    Dreg_f16_thr = Tx.<span class="fn">alloc_local</span>((<span class="num">128</span>), <span class="str">"float16"</span>)</div><div class="cb-line cb-focus" data-ln="38" style="background: rgba(59, 130, 246, 0.2);">    Dreg_wg = Dreg_thr.<span class="fn">view</span>(<span class="num">128</span>, <span class="num">128</span>, layout=Dreg_layout)</div><div class="cb-line cb-focus" data-ln="39" style="background: rgba(59, 130, 246, 0.2);">    Dreg_f16_wg = Dreg_f16_thr.<span class="fn">view</span>(<span class="num">128</span>, <span class="num">128</span>, layout=Dreg_layout)</div><div class="cb-line" data-ln="40">    <span class="kw">with</span> Tx.<span class="fn">warpgroup</span>():       <span class="cmt"># 128 threads</span></div><div class="cb-line" data-ln="41">      Tx.<span class="fn">copy</span>(Dreg_wg[:, :], tmem[:,:])</div><div class="cb-line" data-ln="42">      Tx.<span class="fn">cast</span>(Dreg_f16_wg[:, :], Dreg_wg[:, :])</div><div class="cb-line" data-ln="43">      Tx.<span class="fn">copy</span>(D[:, :], Dreg_f16_wg[:, :])</div></pre>
+      </div>
+    </section>
+
+    <aside class="info-panel" id="info-panel">
+      <div class="info-border" id="info-border" style="background: rgb(59, 130, 246);"></div>
+      <div class="tabs" role="tablist">
+        <button class="tab active" type="button" role="tab" data-tab="layout">
+          <span class="tab-num">1</span>
+          <span class="tab-text">Explicit layout on tensors</span>
+        </button>
+        <button class="tab" type="button" role="tab" data-tab="scopes">
+          <span class="tab-num">2</span>
+          <span class="tab-text">Execution scopes</span>
+        </button>
+        <button class="tab" type="button" role="tab" data-tab="operators">
+          <span class="tab-num">3</span>
+          <span class="tab-text">Deterministic operator dispatch over tiles</span>
+        </button>
+      </div>
+      <h3 class="info-title" id="info-title" style="color: rgb(59, 130, 246);">1. Explicit layout on tensors</h3>
+      <div class="info-body" id="info-body">Layout (swizzle + tile) attached to each tensor determines logical-to-physical mapping, provide efficient access to certain tile-slice patterns.</div>
+    </aside>
+  </main>
+
+<script>
+var code = String.raw`A_layout = Tx.ComposeLayout(
+    Tx.SwizzleLayout(3, 3, 3, swizzle_inner=True),
+    Tx.TileLayout(Tx.S[(128, 1, 64) : (64, 128 * 64, 1)]),
+)
+B_layout = Tx.ComposeLayout(
+    Tx.SwizzleLayout(3, 3, 3, swizzle_inner=True),
+    Tx.TileLayout(Tx.S[(128, 1, 64) : (64, 128 * 64, 1)]),
+)
+Dreg_layout = TileLayout(Tx.S[(128, 128) : (1@Tx.tid_in_wg, 1@Tx.TCol)])
+
+@Tx.prim_func(tirx=True)
+def gemm_fp16(A, B, D):
+  with Tx.kernel():
+    bx, by = Tx.cta_id([...], parent="kernel")
+    wg_id = Tx.warpgroup_id([1], parent="cta")
+    warp_id = Tx.warp_id([4], parent="warpgroup")
+    lane_id = Tx.thread_id([32], parent="warp")
+
+    pool = Tx.PoolAllocator()
+    Asmem = pool.alloc((128,64), "float16", layout=A_layout)
+    Bsmem = pool.alloc((128,64), "float16", layout=B_layout)
+    pool.commit()
+    Tx.ptx.tcgen05.alloc(tmem_addr, n_cols=512)
+
+    with Tx.cta():              # all 128 threads
+      Tx.copy(Asmem[:,:], A[:, :])
+      Tx.copy(Bsmem[:,:], B[:, :])
+    Tx.cuda.cta_sync()
+
+    with Tx.thread()[Tx.elect_sync()]:  # 1 thread
+      Tx.gemm_async(tmem[:,:], Asmem[:,:], Bsmem[:,:], accum=False, dispatch="tcgen05", cta_group=1)
+      Tx.ptx.tcgen05.commit(mma_bar, cta_group=1)
+    Tx.ptx.mbarrier.try_wait(mma_bar, phase)
+
+    # write back
+    Dreg_thr = Tx.alloc_local((128), "float32")
+    Dreg_f16_thr = Tx.alloc_local((128), "float16")
+    Dreg_wg = Dreg_thr.view(128, 128, layout=Dreg_layout)
+    Dreg_f16_wg = Dreg_f16_thr.view(128, 128, layout=Dreg_layout)
+    with Tx.warpgroup():       # 128 threads
+      Tx.copy(Dreg_wg[:, :], tmem[:,:])
+      Tx.cast(Dreg_f16_wg[:, :], Dreg_wg[:, :])
+      Tx.copy(D[:, :], Dreg_f16_wg[:, :])`;
+
+(function () {
+  'use strict';
+
+  // Render plain highlighted code (no blockDefs)
+  createCodeBlock(document.getElementById('code-container'), code);
+
+  var data = {
+    layout: {
+      label: '1. Explicit layout on tensors',
+      color: '#3b82f6',
+      body: 'Layout (swizzle + tile) attached to each tensor determines logical-to-physical mapping, provide efficient access to certain tile-slice patterns.',
+      focusLines: [1,2,3,4,5,6,7,8,9, 20,21, 38,39],
+      focusColor: 'rgba(59,130,246,0.20)'
+    },
+    operators: {
+      label: '3. Deterministic operator dispatch over tiles',
+      color: '#059669',
+      body: 'Tile-level operators (Tx.copy, Tx.gemm_async, Tx.cast) on tensor tile slices, matching high-level reasoning. They are deterministically dispatched to low-level PTX based on layout, slice and execution scope.',
+      focusLines: [26,27, 31, 41,42,43],
+      focusColor: 'rgba(5,150,105,0.20)'
+    },
+    scopes: {
+      label: '2. Execution scopes',
+      color: '#8b5cf6',
+      body: 'Execution scopes are explicit (kernel/CTA/warpgroup/warp/thread via Tx.cta()/Tx.warpgroup()/Tx.thread()), defining exactly which thread group executes each operator.',
+      focusLines: [13, 25, 30, 40],
+      focusColor: 'rgba(139,92,246,0.25)'
+    }
+  };
+
+  var container = document.getElementById('code-container');
+  var border = document.getElementById('info-border');
+  var titleEl = document.getElementById('info-title');
+  var bodyEl = document.getElementById('info-body');
+  var tabs = document.querySelectorAll('.tab');
+  var allLines = container.querySelectorAll('.cb-line');
+  var activeKey = '';
+
+  function clearFocus() {
+    for (var i = 0; i < allLines.length; i++) {
+      allLines[i].classList.remove('cb-focus');
+      allLines[i].style.background = '';
+    }
+  }
+
+  function applyFocus(lns, color) {
+    for (var i = 0; i < lns.length; i++) {
+      var el = container.querySelector('.cb-line[data-ln="' + lns[i] + '"]');
+      if (el) { el.classList.add('cb-focus'); el.style.background = color; }
+    }
+  }
+
+  function selectTab(key) {
+    if (!data[key] || key === activeKey) return;
+    activeKey = key;
+    tabs.forEach(function (tab) { tab.classList.toggle('active', tab.dataset.tab === key); });
+    clearFocus();
+    applyFocus(data[key].focusLines, data[key].focusColor);
+    border.style.background = data[key].color;
+    titleEl.textContent = data[key].label;
+    titleEl.style.color = data[key].color;
+    bodyEl.textContent = data[key].body;
+  }
+
+  tabs.forEach(function (tab) {
+    tab.addEventListener('click', function () { selectTab(tab.dataset.tab); });
+  });
+
+  selectTab('layout');
+})();
+</script>
+
+
+</body></html>

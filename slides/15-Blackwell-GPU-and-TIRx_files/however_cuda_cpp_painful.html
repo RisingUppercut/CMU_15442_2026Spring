@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<!-- saved from url=(0081)https://mlsyscourse.org/slides/tirx-gemm/demo/however_cuda_cpp_painful.html?embed -->
+<html lang="en" data-immersive-translate-page-theme="light"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CUDA C++ is painful</title>
+<link rel="stylesheet" href="./viz-base.css">
+<link rel="stylesheet" href="./code-highlight.css">
+<style>
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    padding: 1rem 1.1rem;
+    background: #ffffff;
+    color: #111827;
+    font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  }
+
+  .wrap {
+    max-width: 980px;
+    margin: 0 auto;
+    display: grid;
+    gap: 0.55rem;
+  }
+
+  .intro {
+    margin: 0;
+    font-size: 1rem;
+    line-height: 1.45;
+    color: #1f2937;
+    font-weight: 500;
+  }
+
+  .block {
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    background: #ffffff;
+    padding: 0.58rem 0.66rem;
+  }
+
+  .label {
+    margin: 0;
+    font-size: 0.82rem;
+    line-height: 1.2;
+    color: #6b7280;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+  }
+
+  .text {
+    margin: 0;
+    font-size: 1rem;
+    line-height: 1.45;
+    color: #1f2937;
+    font-weight: 500;
+  }
+
+  .ops {
+    margin: 0;
+    padding-left: 1.2rem;
+    font-size: 1rem;
+    line-height: 1.4;
+    color: #1f2937;
+  }
+
+  .ops li + li {
+    margin-top: 0.16rem;
+  }
+
+  .think-split {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem;
+    margin-top: 0.35rem;
+  }
+
+  .think-card {
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    background: #fafafa;
+    padding: 0.5rem 0.56rem;
+  }
+
+  .think-label {
+    margin: 0 0 0.18rem 0;
+    display: inline-block;
+    padding: 0.06rem 0.34rem;
+    border-radius: 999px;
+    font-size: 0.76rem;
+    color: #6b7280;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    border: 1px solid transparent;
+    line-height: 1.1;
+  }
+
+  .think-card-human {
+    border-color: #bfdbfe;
+    background: #f8fbff;
+  }
+
+  .think-card-agent {
+    border-color: #99f6e4;
+    background: #f3fffd;
+  }
+
+  .think-label-human {
+    color: #1d4ed8;
+    background: #dbeafe;
+    border-color: #bfdbfe;
+  }
+
+  .think-label-agent {
+    color: #0f766e;
+    background: #ccfbf1;
+    border-color: #99f6e4;
+  }
+
+  .think-text {
+    margin: 0;
+    font-size: 0.93rem;
+    line-height: 1.38;
+    color: #374151;
+  }
+
+  .pillars {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.5rem;
+    margin-top: 0.1rem;
+  }
+
+  .pillar {
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    background: #ffffff;
+    padding: 0.56rem 0.62rem;
+  }
+
+  .num {
+    width: 1.3rem;
+    height: 1.3rem;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: #e5e7eb;
+    color: #111827;
+    font-size: 0.76rem;
+    font-weight: 700;
+    margin-bottom: 0.28rem;
+  }
+
+  .pillar h3 {
+    margin: 0 0 0.2rem 0;
+    font-size: 0.9rem;
+    line-height: 1.25;
+    color: #111827;
+    font-weight: 650;
+  }
+
+  .pillar p {
+    margin: 0;
+    font-size: 0.86rem;
+    line-height: 1.32;
+    color: #374151;
+  }
+
+  @media (max-width: 900px) {
+    body {
+      padding: 0.85rem 0.9rem;
+    }
+
+    .text,
+    .ops {
+      font-size: 0.95rem;
+    }
+
+    .pillars {
+      grid-template-columns: 1fr;
+    }
+
+    .think-split {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+<style data-id="immersive-translate-input-injected-css"></style></head>
+<body>
+  <main class="wrap">
+    <p class="intro">Directly operating on lowest-level can be painful, as you likely noticed in the previous example.</p>
+
+    <section class="block">
+      <p class="label">How Users Think</p>
+      <div class="think-split">
+        <article class="think-card think-card-human">
+          <p class="think-label think-label-human">Human</p>
+          <p class="think-text">Human reasoning is typically close to this style: use high-level operations over tensor slices (tiles), e.g.:</p>
+          <ul class="ops">
+            <li>copy</li>
+            <li>GEMM</li>
+            <li>add</li>
+            <li>fill</li>
+          </ul>
+          <p class="think-text">Such subroutines can be reused.</p>
+        </article>
+        <article class="think-card think-card-agent">
+          <p class="think-label think-label-agent">Agent</p>
+          <p class="think-text">When agents handle instruction-level details directly, many errors are easy to introduce. Thinking in higher-level kernel algorithms is less error-prone, keeps programs concise, makes changes easier (context is always finite), and makes it easier to compose optimizations.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="block">
+      <p class="label">TIRx Mechanism</p>
+      <p class="text">TIRx provides a first-class mechanism for this: deterministic operator dispatch.</p>
+    </section>
+    <section class="pillars">
+      <article class="pillar">
+        <div class="num">1</div>
+        <h3>Explicit layout on tensors</h3>
+        <p>Layout (swizzle + tile) attached to each tensor determines logical-to-physical mapping, provide efficient access to certain tile-slice patterns.</p>
+      </article>
+      <article class="pillar">
+        <div class="num">2</div>
+        <h3>Execution scopes</h3>
+        <p>Execution scopes are explicit (kernel/CTA/warpgroup/warp/thread), defining exactly which thread group executes each operator.</p>
+      </article>
+      <article class="pillar">
+        <div class="num">3</div>
+        <h3>Deterministic operator dispatch over tiles</h3>
+        <p>Tile-level operators (Tx.copy, Tx.gemm_async, Tx.cast) on tensor tile slices, matching high-level reasoning. They are deterministically dispatched to low-level PTX based on layout, slice and execution scope.</p>
+      </article>
+    </section>
+  </main>
+
+
+</body></html>

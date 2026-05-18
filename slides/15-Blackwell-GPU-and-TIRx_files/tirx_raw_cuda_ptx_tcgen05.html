@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<!-- saved from url=(0082)https://mlsyscourse.org/slides/tirx-gemm/demo/tirx_raw_cuda_ptx_tcgen05.html?embed -->
+<html lang="en" data-immersive-translate-page-theme="light"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Raw CUDA C++ PTX tcgen05 Snippet</title>
+<link rel="stylesheet" href="./viz-base.css">
+<link rel="stylesheet" href="./code-highlight.css">
+<script src="./code-highlight.js.下载"></script>
+<style>
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    padding: 0.5rem 1rem;
+  }
+
+  .layout {
+    display: grid;
+    grid-template-columns: 70% 30%;
+    gap: 1rem;
+    align-items: start;
+  }
+
+  .left-col {
+    min-width: 0;
+  }
+
+  .code-panel {
+    max-height: 70vh;
+    overflow: auto;
+  }
+
+  .code-panel pre {
+    margin: 0;
+    padding: 1rem 1.2rem;
+    font-size: 11px;
+    line-height: 1.5;
+    tab-size: 4;
+  }
+
+  .info-panel {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1rem;
+    min-height: 0;
+    overflow: auto;
+    transition: border-color var(--transition);
+  }
+
+  .info-border {
+    height: 3px;
+    border-radius: var(--radius) var(--radius) 0 0;
+    margin: -1rem -1rem 1rem -1rem;
+    transition: background var(--transition);
+    background: var(--border);
+  }
+
+  .info-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 0.7rem;
+    color: #64748b;
+  }
+
+  .info-title {
+    font-size: 1.08rem;
+    font-weight: 600;
+    margin: 0 0 0.55rem 0;
+    color: #1e293b;
+  }
+
+  .info-body {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    line-height: 1.6;
+  }
+
+  .info-body ul {
+    margin: 0; padding-left: 1.2rem;
+  }
+
+  .info-body li {
+    margin-bottom: 0.4rem;
+  }
+
+  .info-panel.empty .info-body {
+    opacity: 0.7;
+  }
+
+  @media (max-width: 900px) {
+    body {
+      height: auto;
+      min-height: 100vh;
+      overflow: auto;
+    }
+
+    .layout {
+      grid-template-columns: 1fr;
+      height: auto;
+    }
+
+    .code-panel {
+      height: 56vh;
+      min-height: 320px;
+    }
+  }
+</style>
+<style data-id="immersive-translate-input-injected-css"></style></head>
+<body>
+  <main class="layout">
+    <section class="left-col">
+      <div class="cb-panel dark">
+        <div class="cb-header">TIRx provides native-level (CUDA C/PTX) access to hardware</div>
+        <pre id="snippet" class="code-dark code-panel"><div class="cb-region" data-region="signature" style="border-left-color:#6b7280"><div class="cb-line" data-ln="1"><span class="dec">@Tx.prim_func</span>(tirx=<span class="kw">True</span>)</div><div class="cb-line" data-ln="2"><span class="kw">def</span> <span class="fn">raw_CUDA_ptx_tcgen05</span>(A: Tx.<span class="fn">Buffer</span>((<span class="num">128</span> * <span class="num">64</span>), <span class="str">"float16"</span>), B: Tx.<span class="fn">Buffer</span>((<span class="num">128</span> * <span class="num">64</span>), <span class="str">"float16"</span>), C: Tx.<span class="fn">Buffer</span>((<span class="num">128</span>, <span class="num">128</span>), <span class="str">"float32"</span>)):</div></div><div class="cb-region" data-region="launch" style="border-left-color:#3b82f6"><div class="cb-line" data-ln="3">    <span class="kw">with</span> Tx.<span class="fn">kernel</span>():</div><div class="cb-line" data-ln="4">        bx = Tx.<span class="fn">cta_id</span>([<span class="num">1</span>], parent=<span class="str">"kernel"</span>)</div><div class="cb-line" data-ln="5">        warp_id = Tx.<span class="fn">warp_id</span>([<span class="num">4</span>], parent=<span class="str">"cta"</span>)</div><div class="cb-line" data-ln="6">        lane_id = Tx.<span class="fn">thread_id</span>([<span class="num">32</span>], parent=<span class="str">"warp"</span>)</div><div class="cb-line" data-ln="7">        tx = Tx.<span class="fn">thread_id</span>([<span class="num">128</span>], parent=<span class="str">"cta"</span>)</div><div class="cb-line" data-ln="8">        warp_id_in_cta: Tx.<span class="fn">let</span>[Tx.<span class="fn">int32</span>] = Tx.<span class="fn">tvm_warp_shuffle</span>(0xFFFFFFFF, tx // <span class="num">32</span>, <span class="num">0</span>, <span class="num">32</span>, <span class="num">32</span>)</div></div><div class="cb-region" data-region="buffers" style="border-left-color:#06b6d4"><div class="cb-line" data-ln="9">        dyn = Tx.<span class="fn">alloc_buffer</span>((<span class="num">33792</span>,), <span class="str">"uint8"</span>, scope=<span class="str">"shared.dyn"</span>)</div><div class="cb-line" data-ln="10">        tmem_addr = Tx.<span class="fn">decl_buffer</span>((<span class="num">1</span>,), <span class="str">"uint32"</span>, data=dyn.data, scope=<span class="str">"shared"</span>)</div><div class="cb-line" data-ln="11">        A_smem = Tx.<span class="fn">decl_buffer</span>((<span class="num">8192</span>,), <span class="str">"float16"</span>, data=dyn.data, elem_offset=<span class="num">256</span>, scope=<span class="str">"shared"</span>)</div><div class="cb-line" data-ln="12">        B_smem = Tx.<span class="fn">decl_buffer</span>((<span class="num">8192</span>,), <span class="str">"float16"</span>, data=dyn.data, elem_offset=<span class="num">8448</span>, scope=<span class="str">"shared"</span>)</div><div class="cb-line" data-ln="13">        bar = Tx.<span class="fn">decl_buffer</span>((<span class="num">1</span>,), <span class="str">"uint64"</span>, data=dyn.data, elem_offset=<span class="num">8</span>, scope=<span class="str">"shared"</span>)</div><div class="cb-line" data-ln="14">        reg = Tx.<span class="fn">alloc_local</span>((<span class="num">128</span>,))</div><div class="cb-line" data-ln="15">        descA = Tx.<span class="fn">alloc_local</span>((<span class="num">1</span>,), <span class="str">"uint64"</span>)</div><div class="cb-line" data-ln="16">        descB = Tx.<span class="fn">alloc_local</span>((<span class="num">1</span>,), <span class="str">"uint64"</span>)</div><div class="cb-line" data-ln="17">        descI = Tx.<span class="fn">alloc_local</span>((<span class="num">1</span>,), <span class="str">"uint32"</span>)</div><div class="cb-line" data-ln="18">        phase = Tx.<span class="fn">alloc_local</span>((<span class="num">1</span>,), <span class="str">"int32"</span>)</div></div><div class="cb-region" data-region="control" style="border-left-color:#059669"><div class="cb-line" data-ln="19">        <span class="kw">if</span> <span class="num">0</span> &lt;= warp_id_in_cta <span class="kw">and</span> warp_id_in_cta &lt; <span class="num">1</span>:</div><div class="cb-line" data-ln="20">            Tx.ptx.tcgen05.<span class="fn">alloc</span>(Tx.<span class="fn">address_of</span>(tmem_addr[<span class="num">0</span>]), <span class="num">512</span>, <span class="num">1</span>)</div><div class="cb-line" data-ln="21">        Tx.cuda.<span class="fn">cta_sync</span>()</div><div class="cb-line" data-ln="22">        <span class="kw">for</span> i <span class="kw">in</span> <span class="kw">range</span>(<span class="num">128</span>):</div><div class="cb-line" data-ln="23">            reg[i] = Tx.<span class="fn">float32</span>(<span class="num">0.0</span>)</div><div class="cb-line" data-ln="24">        <span class="kw">if</span> tx == <span class="num">0</span>:</div><div class="cb-line" data-ln="25">            <span class="kw">for</span> v_2, v_3 <span class="kw">in</span> T.<span class="fn">grid</span>(<span class="num">128</span>, <span class="num">64</span>):</div><div class="cb-line" data-ln="26">                idx = v_2 * <span class="num">8</span> + v_3 // <span class="num">8</span></div><div class="cb-line" data-ln="27">                A_smem[((idx ^ ((idx &amp; <span class="num">56</span>) &gt;&gt; <span class="num">3</span>)) &lt;&lt; <span class="num">3</span>) + v_3 % <span class="num">8</span> + <span class="num">256</span>] = A[v_2 * <span class="num">64</span> + v_3]</div><div class="cb-line" data-ln="28">        Tx.cuda.<span class="fn">cta_sync</span>()</div><div class="cb-line" data-ln="29">        <span class="kw">if</span> tx == <span class="num">0</span>:</div><div class="cb-line" data-ln="30">            <span class="kw">for</span> v_2, v_3 <span class="kw">in</span> T.<span class="fn">grid</span>(<span class="num">128</span>, <span class="num">64</span>):</div><div class="cb-line" data-ln="31">                idx = v_2 * <span class="num">8</span> + v_3 // <span class="num">8</span></div><div class="cb-line" data-ln="32">                B_smem[((idx ^ ((idx &amp; <span class="num">56</span>) &gt;&gt; <span class="num">3</span>)) &lt;&lt; <span class="num">3</span>) + v_3 % <span class="num">8</span> + <span class="num">8448</span>] = B[v_2 * <span class="num">64</span> + v_3]</div><div class="cb-line" data-ln="33">        Tx.cuda.<span class="fn">cta_sync</span>()</div></div><div class="cb-region" data-region="intrinsics" style="border-left-color:#d97706"><div class="cb-line" data-ln="34">        Tx.ptx.fence.<span class="fn">proxy_async</span>(<span class="str">"shared::cta"</span>)</div><div class="cb-line" data-ln="35">        Tx.cuda.<span class="fn">cta_sync</span>()</div><div class="cb-line" data-ln="36">        phase[<span class="num">0</span>] = <span class="num">0</span></div><div class="cb-line" data-ln="37">        <span class="kw">if</span> tx == <span class="num">0</span>:</div><div class="cb-line" data-ln="38">            Tx.ptx.mbarrier.<span class="fn">init</span>(bar.data, <span class="num">1</span>)</div><div class="cb-line" data-ln="39">            Tx.ptx.tcgen05.<span class="fn">encode_instr_descriptor</span>(</div><div class="cb-line" data-ln="40">                descI.data, <span class="str">"float32"</span>, <span class="str">"float16"</span>, <span class="str">"float16"</span>, <span class="num">128</span>, <span class="num">128</span>, <span class="num">16</span>, <span class="kw">False</span>, <span class="kw">False</span>, <span class="num">1</span>, <span class="kw">False</span>, <span class="kw">False</span>, <span class="kw">False</span>, <span class="kw">False</span>)</div><div class="cb-line" data-ln="41">            <span class="kw">for</span> k <span class="kw">in</span> <span class="kw">range</span>(<span class="num">4</span>):</div><div class="cb-line" data-ln="42">                ki = k * <span class="num">2</span></div><div class="cb-line" data-ln="43">                Tx.ptx.tcgen05.<span class="fn">encode_matrix_descriptor</span>(descA.data, T.<span class="fn">address_of</span>(A_smem[((ki ^ ((ki &amp; <span class="num">56</span>) &gt;&gt; <span class="num">3</span>)) &lt;&lt; <span class="num">3</span>) + <span class="num">256</span>]), <span class="num">128</span>, <span class="num">8</span>, <span class="num">0</span>)</div><div class="cb-line" data-ln="44">                Tx.ptx.tcgen05.<span class="fn">encode_matrix_descriptor</span>(descB.data, T.<span class="fn">address_of</span>(B_smem[((ki ^ ((ki &amp; <span class="num">56</span>) &gt;&gt; <span class="num">3</span>)) &lt;&lt; <span class="num">3</span>) + <span class="num">8448</span>]), <span class="num">128</span>, <span class="num">8</span>, <span class="num">0</span>)</div><div class="cb-line" data-ln="45">                <span class="kw">if</span> k == <span class="num">0</span>:</div><div class="cb-line" data-ln="46">                    Tx.ptx.tcgen05.<span class="fn">mma</span>(<span class="str">"float32"</span>, <span class="str">"float16"</span>, <span class="str">"float16"</span>,</div><div class="cb-line" data-ln="47">                        tmem_addr[<span class="num">0</span>], descA[<span class="num">0</span>], descB[<span class="num">0</span>], descI[<span class="num">0</span>], <span class="kw">False</span>, <span class="num">1</span>, <span class="kw">False</span>, <span class="num">0</span>, <span class="num">0</span>, <span class="num">0</span>, <span class="num">0</span>, <span class="num">0</span>)</div><div class="cb-line" data-ln="48">                <span class="kw">else</span>:</div><div class="cb-line" data-ln="49">                    Tx.ptx.tcgen05.<span class="fn">mma</span>(<span class="str">"float32"</span>, <span class="str">"float16"</span>, <span class="str">"float16"</span>,</div><div class="cb-line" data-ln="50">                        tmem_addr[<span class="num">0</span>], descA[<span class="num">0</span>], descB[<span class="num">0</span>], descI[<span class="num">0</span>], <span class="kw">False</span>, <span class="num">1</span>, <span class="kw">True</span>, <span class="num">0</span>, <span class="num">0</span>, <span class="num">0</span>, <span class="num">0</span>, <span class="num">0</span>)</div><div class="cb-line" data-ln="51">            Tx.ptx.tcgen05.<span class="fn">commit</span>(bar.data, <span class="num">1</span>, <span class="num">0</span>)</div><div class="cb-line" data-ln="52">        Tx.ptx.mbarrier.<span class="fn">try_wait</span>(bar.data, phase[<span class="num">0</span>])</div><div class="cb-line" data-ln="53">        phase[<span class="num">0</span>] = phase[<span class="num">0</span>] ^ <span class="num">1</span></div><div class="cb-line" data-ln="54">        Tx.cuda.<span class="fn">cta_sync</span>()</div><div class="cb-line" data-ln="55">        Tx.ptx.tcgen05.fence.<span class="fn">after_thread_sync</span>()</div><div class="cb-line" data-ln="56">        <span class="kw">for</span> i <span class="kw">in</span> <span class="kw">range</span>(<span class="num">128</span>):</div><div class="cb-line" data-ln="57">            Tx.ptx.tcgen05.<span class="fn">ld</span>(tmem_addr[<span class="num">0</span>], warp_id_in_cta * <span class="num">32</span>, i, <span class="str">"32x32b"</span>, <span class="num">1</span>, <span class="kw">False</span>, reg[i])</div><div class="cb-line" data-ln="58">        Tx.ptx.tcgen05.wait.<span class="fn">ld</span>()</div><div class="cb-line" data-ln="59">        <span class="kw">for</span> i <span class="kw">in</span> <span class="kw">range</span>(<span class="num">128</span>):</div><div class="cb-line" data-ln="60">            C[tx, i] = reg[i]</div><div class="cb-line" data-ln="61">        <span class="kw">if</span> <span class="num">0</span> &lt;= warp_id_in_cta <span class="kw">and</span> warp_id_in_cta &lt; <span class="num">1</span>:</div><div class="cb-line" data-ln="62">            Tx.ptx.tcgen05.<span class="fn">relinquish_alloc_permit</span>(<span class="num">1</span>)</div><div class="cb-line" data-ln="63">            Tx.ptx.tcgen05.<span class="fn">dealloc</span>(tmem_addr[<span class="num">0</span>], <span class="num">512</span>, <span class="num">1</span>)</div></div></pre>
+      </div>
+    </section>
+
+    <aside class="info-panel empty" id="info-panel">
+      <div class="info-border" id="info-border"></div>
+      <div class="info-label" id="info-label">TIRx → CUDA C/PTX Mapping</div>
+      <h3 class="info-title" id="info-title"></h3>
+      <div class="info-body" id="info-body">← Click a highlighted code block to inspect its CUDA C/PTX counterpart. Together, these elements make TIRx DSL expressively equivalent for representing CUDA C/PTX kernels.</div>
+    </aside>
+  </main>
+
+<script>
+const code = String.raw`@Tx.prim_func(tirx=True)
+def raw_CUDA_ptx_tcgen05(A: Tx.Buffer((128 * 64), "float16"), B: Tx.Buffer((128 * 64), "float16"), C: Tx.Buffer((128, 128), "float32")):
+    with Tx.kernel():
+        bx = Tx.cta_id([1], parent="kernel")
+        warp_id = Tx.warp_id([4], parent="cta")
+        lane_id = Tx.thread_id([32], parent="warp")
+        tx = Tx.thread_id([128], parent="cta")
+        warp_id_in_cta: Tx.let[Tx.int32] = Tx.tvm_warp_shuffle(0xFFFFFFFF, tx // 32, 0, 32, 32)
+        dyn = Tx.alloc_buffer((33792,), "uint8", scope="shared.dyn")
+        tmem_addr = Tx.decl_buffer((1,), "uint32", data=dyn.data, scope="shared")
+        A_smem = Tx.decl_buffer((8192,), "float16", data=dyn.data, elem_offset=256, scope="shared")
+        B_smem = Tx.decl_buffer((8192,), "float16", data=dyn.data, elem_offset=8448, scope="shared")
+        bar = Tx.decl_buffer((1,), "uint64", data=dyn.data, elem_offset=8, scope="shared")
+        reg = Tx.alloc_local((128,))
+        descA = Tx.alloc_local((1,), "uint64")
+        descB = Tx.alloc_local((1,), "uint64")
+        descI = Tx.alloc_local((1,), "uint32")
+        phase = Tx.alloc_local((1,), "int32")
+        if 0 <= warp_id_in_cta and warp_id_in_cta < 1:
+            Tx.ptx.tcgen05.alloc(Tx.address_of(tmem_addr[0]), 512, 1)
+        Tx.cuda.cta_sync()
+        for i in range(128):
+            reg[i] = Tx.float32(0.0)
+        if tx == 0:
+            for v_2, v_3 in T.grid(128, 64):
+                idx = v_2 * 8 + v_3 // 8
+                A_smem[((idx ^ ((idx & 56) >> 3)) << 3) + v_3 % 8 + 256] = A[v_2 * 64 + v_3]
+        Tx.cuda.cta_sync()
+        if tx == 0:
+            for v_2, v_3 in T.grid(128, 64):
+                idx = v_2 * 8 + v_3 // 8
+                B_smem[((idx ^ ((idx & 56) >> 3)) << 3) + v_3 % 8 + 8448] = B[v_2 * 64 + v_3]
+        Tx.cuda.cta_sync()
+        Tx.ptx.fence.proxy_async("shared::cta")
+        Tx.cuda.cta_sync()
+        phase[0] = 0
+        if tx == 0:
+            Tx.ptx.mbarrier.init(bar.data, 1)
+            Tx.ptx.tcgen05.encode_instr_descriptor(
+                descI.data, "float32", "float16", "float16", 128, 128, 16, False, False, 1, False, False, False, False)
+            for k in range(4):
+                ki = k * 2
+                Tx.ptx.tcgen05.encode_matrix_descriptor(descA.data, T.address_of(A_smem[((ki ^ ((ki & 56) >> 3)) << 3) + 256]), 128, 8, 0)
+                Tx.ptx.tcgen05.encode_matrix_descriptor(descB.data, T.address_of(B_smem[((ki ^ ((ki & 56) >> 3)) << 3) + 8448]), 128, 8, 0)
+                if k == 0:
+                    Tx.ptx.tcgen05.mma("float32", "float16", "float16",
+                        tmem_addr[0], descA[0], descB[0], descI[0], False, 1, False, 0, 0, 0, 0, 0)
+                else:
+                    Tx.ptx.tcgen05.mma("float32", "float16", "float16",
+                        tmem_addr[0], descA[0], descB[0], descI[0], False, 1, True, 0, 0, 0, 0, 0)
+            Tx.ptx.tcgen05.commit(bar.data, 1, 0)
+        Tx.ptx.mbarrier.try_wait(bar.data, phase[0])
+        phase[0] = phase[0] ^ 1
+        Tx.cuda.cta_sync()
+        Tx.ptx.tcgen05.fence.after_thread_sync()
+        for i in range(128):
+            Tx.ptx.tcgen05.ld(tmem_addr[0], warp_id_in_cta * 32, i, "32x32b", 1, False, reg[i])
+        Tx.ptx.tcgen05.wait.ld()
+        for i in range(128):
+            C[tx, i] = reg[i]
+        if 0 <= warp_id_in_cta and warp_id_in_cta < 1:
+            Tx.ptx.tcgen05.relinquish_alloc_permit(1)
+            Tx.ptx.tcgen05.dealloc(tmem_addr[0], 512, 1)`;
+
+(function () {
+  var infoData = {
+    signature: {
+      label: "Kernel Signature",
+      color: "#6b7280",
+      body: "<ul><li><b>TIRx:</b> @Tx.prim_func(tirx=True) plus typed buffer signature</li><li><b>CUDA C/PTX:</b> __global__ kernel signature and PTX .entry parameter interface</li></ul>"
+    },
+    launch: {
+      label: "Kernel Launch Parameters",
+      color: "#3b82f6",
+      body: "<ul><li><b>TIRx:</b> Tx.kernel(), Tx.cta_id, Tx.warp_id, Tx.thread_id define CTA/warp/lane/thread hierarchy</li><li><b>CUDA C/PTX:</b> grid/block/thread indexing and native execution hierarchy</li></ul>"
+    },
+    buffers: {
+      label: "Buffer (Tensor Allocations)",
+      color: "#06b6d4",
+      body: "<ul><li><b>TIRx:</b> Tx.alloc_buffer / Tx.decl_buffer / Tx.alloc_local define shared memory, local registers, descriptors, and scalar state</li><li><b>CUDA C/PTX:</b> storage-space declarations and register/shared-memory objects</li></ul>"
+    },
+    control: {
+      label: "Basic Control Flow (for, if)",
+      color: "#059669",
+      body: "<ul><li><b>TIRx:</b> Python for/if control flow in kernel code</li><li><b>CUDA C/PTX:</b> C++ loops/branches and PTX predicate/branch control flow; semantics are preserved</li></ul>"
+    },
+    intrinsics: {
+      label: "Expressions + CUDA C/PTX Intrinsics",
+      color: "#d97706",
+      body: "<ul><li><b>TIRx:</b> expressions plus Tx.cuda / Tx.ptx.* calls</li><li><b>CUDA C/PTX:</b> direct native operations (barriers, mbarrier, descriptors, tcgen05 mma/ld, waits, deallocation) with no abstraction gap</li></ul>"
+    }
+  };
+
+  var panel = document.getElementById("info-panel");
+  var border = document.getElementById("info-border");
+  var titleEl = document.getElementById("info-title");
+  var bodyEl = document.getElementById("info-body");
+
+  createCodeBlock(document.getElementById("snippet"), code, {
+    blockDefs: [
+      { key: "signature",  start: 1,  end: 2,  color: "#6b7280" },
+      { key: "launch",     start: 3,  end: 8,  color: "#3b82f6" },
+      { key: "buffers",    start: 9,  end: 18, color: "#06b6d4" },
+      { key: "control",    start: 19, end: 33, color: "#059669" },
+      { key: "intrinsics", start: 34, end: 63, color: "#d97706" }
+    ],
+    focusLines: {
+      control:    { lines: [19, 22, 24, 25, 29, 30] },
+      intrinsics: { lines: [34, 38, 39, 40, 43, 44, 46, 47, 49, 50, 51, 52, 55, 57, 58, 62, 63] }
+    },
+    onBlockClick: function (key) {
+      var info = infoData[key];
+      panel.classList.remove("empty");
+      border.style.background = info.color;
+      titleEl.textContent = info.label;
+      titleEl.style.color = info.color;
+      bodyEl.innerHTML = info.body;
+    }
+  });
+})();
+</script>
+
+
+</body></html>

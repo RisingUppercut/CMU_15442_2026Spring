@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<!-- saved from url=(0072)https://mlsyscourse.org/slides/tirx-gemm/demo/step9_principle.html?embed -->
+<html lang="en" data-immersive-translate-page-theme="light"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Distributed Shared Memory</title>
+<link rel="stylesheet" href="./viz-base.css">
+<script src="./viz-base.js.下载"></script>
+<style>
+  body { display:flex; flex-direction:column; align-items:center; }
+  .arch { max-width:1100px; width:100%; margin:0 auto; position:relative; }
+  .sm-row { display:flex; gap:40px; justify-content:center; align-items:stretch; }
+
+  .sm-box {
+    flex:1; max-width:480px; background:#f0f7ff; border:2.5px dashed #93bbec;
+    border-radius:14px; padding:18px 16px 14px; position:relative;
+  }
+  .sm-box h3 { text-align:center; font-size:15px; font-weight:700; margin-bottom:12px; color:var(--text); }
+
+  .mem-section { margin-bottom:10px; }
+  .mem-label { font-size:11px; font-weight:700; color:var(--dim); text-transform:uppercase; letter-spacing:.6px; margin-bottom:5px; }
+
+  .smem-row { display:flex; gap:8px; }
+  .smem-block {
+    flex:1; border-radius:8px; padding:10px 8px; text-align:center;
+    font-size:12px; font-weight:700; color:#fff; line-height:1.35;
+  }
+  .smem-block span { display:block; font-size:10px; font-weight:500; opacity:.85; }
+  .smem-a { background:#3b82f6; }
+  .smem-b { background:#059669; }
+
+  .tmem-block {
+    border-radius:8px; padding:10px 8px; text-align:center;
+    font-size:12px; font-weight:700; color:#fff; background:#d97706; line-height:1.35;
+  }
+  .tmem-block span { display:block; font-size:10px; font-weight:500; opacity:.85; }
+
+  .mma-engine {
+    margin-top:10px; display:flex; justify-content:center;
+  }
+  .mma-badge {
+    display:inline-flex; align-items:center; gap:5px;
+    background:#1e293b; color:#fff; font-size:11px; font-weight:700;
+    padding:6px 14px; border-radius:6px; letter-spacing:.3px;
+  }
+  .mma-badge svg { width:14px; height:14px; fill:#fbbf24; }
+
+  .mma-badge.idle {
+    background:#cbd5e1; color:#64748b;
+  }
+  .mma-badge.idle svg { fill:#94a3b8; }
+  .idle-label {
+    text-align:center; font-size:10px; color:#94a3b8; margin-top:10px; font-style:italic;
+  }
+
+  /* Connector SVG */
+  .connector-svg { position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; z-index:5; }
+
+  /* Annotations */
+  .annotations {
+    max-width:1100px; width:100%; margin:18px auto 0;
+    display:flex; flex-direction:column; gap:6px;
+  }
+  .anno {
+    background:var(--surface); border:1px solid var(--border); border-radius:8px;
+    padding:10px 16px; font-size:13px; line-height:1.5;
+    font-family:'SF Mono','Fira Code',monospace; color:#334155;
+    box-shadow:0 1px 3px rgba(0,0,0,.06);
+  }
+  .anno code { background:#ede9fe; color:#7c3aed; padding:1px 5px; border-radius:4px; font-size:12px; }
+  .anno strong { color:var(--text); }
+</style>
+<style data-id="immersive-translate-input-injected-css"></style></head>
+<body>
+<h1>Distributed Shared Memory</h1>
+<p class="sub">Two adjacent SMs can read each other's SMEM through the interconnect</p>
+
+<div class="arch" id="arch">
+  <div class="sm-row" id="smRow">
+    <!-- SM-0 -->
+    <div class="sm-box" id="sm0">
+      <h3>SM-0 (CTA-0)</h3>
+      <div class="mem-section">
+        <div class="mem-label">Shared Memory</div>
+        <div class="smem-row">
+          <div class="smem-block smem-a" id="sm0-a">A₀<span>A tile 128×64</span></div>
+          <div class="smem-block smem-b" id="sm0-b">B₀<span>B tile 128×64</span></div>
+        </div>
+      </div>
+      <div class="mem-section">
+        <div class="mem-label">Tensor Memory</div>
+        <div class="tmem-block">Accumulator<span>128×256</span></div>
+      </div>
+      <div class="mma-engine" id="mma0">
+        <div class="mma-badge">
+          <svg viewBox="0 0 24 24"><path d="M20 8h-3V6c0-1.1-.9-2-2-2H9C7.9 4 7 4.9 7 6v2H4c-1.1 0-2 .9-2 2v10h20V10c0-1.1-.9-2-2-2zM9 6h6v2H9V6zm11 12H4v-6h16v6z"></path></svg>
+          MMA Engine
+        </div>
+      </div>
+    </div>
+
+    <!-- SM-1 -->
+    <div class="sm-box" id="sm1">
+      <h3>SM-1 (CTA-1)</h3>
+      <div class="mem-section">
+        <div class="mem-label">Shared Memory</div>
+        <div class="smem-row">
+          <div class="smem-block smem-a" id="sm1-a">A₁<span>A tile 128×64</span></div>
+          <div class="smem-block smem-b" id="sm1-b">B₁<span>B tile 128×64</span></div>
+        </div>
+      </div>
+      <div class="mem-section">
+        <div class="mem-label">Tensor Memory</div>
+        <div class="tmem-block">Accumulator<span>128×256</span></div>
+      </div>
+      <div class="mma-engine" id="mma1">
+        <div class="mma-badge idle">
+          <svg viewBox="0 0 24 24"><path d="M20 8h-3V6c0-1.1-.9-2-2-2H9C7.9 4 7 4.9 7 6v2H4c-1.1 0-2 .9-2 2v10h20V10c0-1.1-.9-2-2-2zM9 6h6v2H9V6zm11 12H4v-6h16v6z"></path></svg>
+          MMA Engine
+        </div>
+        <div class="idle-label">idle — CTA-0 drives MMA for both</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Arrow overlay -->
+  <svg class="connector-svg" id="connSvg">
+    <defs>
+      <marker id="ah-blue" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+        <path d="M0,0 L8,3 L0,6 Z" fill="#3b82f6"></path>
+      </marker>
+      <marker id="ah-green" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+        <path d="M0,0 L8,3 L0,6 Z" fill="#059669"></path>
+      </marker>
+      <marker id="ah-purple" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+        <path d="M0,0 L8,3 L0,6 Z" fill="#7c3aed"></path>
+      </marker>
+    </defs>
+  <g class="dyn"><path d="M177.1999969482422,121.49999618530273 Q177.1999969482422,211.00000762939453 278,211.00000762939453" fill="none" stroke="#3b82f6" stroke-width="2" marker-end="url(#ah-blue)"></path><path d="M402.8000030517578,121.49999618530273 Q402.8000030517578,211.00000762939453 302,211.00000762939453" fill="none" stroke="#059669" stroke-width="2" marker-end="url(#ah-green)"></path><path d="M697.2000274658203,121.49999618530273 L697.2000274658203,129.49999618530273 Q697.2000274658203,143.49999618530273 550,143.49999618530273 Q286,143.49999618530273 286,211.00000762939453" fill="none" stroke="#7c3aed" stroke-width="2.5" stroke-dasharray="6,4" marker-end="url(#ah-purple)"></path><path d="M922.8000030517578,121.49999618530273 L922.8000030517578,129.49999618530273 Q922.8000030517578,157.49999618530273 550,157.49999618530273 Q294,157.49999618530273 294,211.00000762939453" fill="none" stroke="#7c3aed" stroke-width="2.5" stroke-dasharray="6,4" marker-end="url(#ah-purple)"></path><text x="550" y="135.49999618530273" text-anchor="middle" fill="#7c3aed" font-size="11" font-weight="600" font-family="SF Mono,Fira Code,monospace">distributed SMEM</text></g></svg>
+</div>
+
+<div class="annotations">
+  <div class="anno"><code>tcgen05.mma</code> with <strong>cta_group=2</strong> reads SMEM from <strong>both</strong> CTAs in the cluster</div>
+  <div class="anno">Result is distributed: 128 rows in CTA-0's TMEM + 128 rows in CTA-1's TMEM → <strong>256×256 total</strong></div>
+</div>
+
+<script>
+function drawArrows() {
+  var svg = document.getElementById('connSvg');
+  var arch = document.getElementById('arch');
+  var archRect = arch.getBoundingClientRect();
+
+  function rel(el) {
+    var r = el.getBoundingClientRect();
+    return { x: r.left - archRect.left, y: r.top - archRect.top, w: r.width, h: r.height };
+  }
+
+  var sm0a = rel(document.getElementById('sm0-a'));
+  var sm0b = rel(document.getElementById('sm0-b'));
+  var sm1a = rel(document.getElementById('sm1-a'));
+  var sm1b = rel(document.getElementById('sm1-b'));
+  var mma0 = rel(document.getElementById('mma0'));
+
+  var mmaX = mma0.x + mma0.w / 2;
+  var mmaY = mma0.y;  // top of MMA engine box
+
+  // Local read: A₀ → MMA-0 (blue, solid)
+  var a0cx = sm0a.x + sm0a.w / 2;
+  var a0by = sm0a.y + sm0a.h;
+  // Local read: B₀ → MMA-0 (green, solid)
+  var b0cx = sm0b.x + sm0b.w / 2;
+  var b0by = sm0b.y + sm0b.h;
+
+  // Cross-CTA: A₁ → MMA-0 (purple, dashed)
+  var a1cx = sm1a.x + sm1a.w / 2;
+  var a1by = sm1a.y + sm1a.h;
+  // Cross-CTA: B₁ → MMA-0 (purple, dashed)
+  var b1cx = sm1b.x + sm1b.w / 2;
+  var b1by = sm1b.y + sm1b.h;
+
+  // Gap between SM boxes — route cross-CTA arrows through the gap
+  var sm0r = rel(document.getElementById('sm0'));
+  var sm1r = rel(document.getElementById('sm1'));
+  var gapCx = sm0r.x + sm0r.w + (sm1r.x - (sm0r.x + sm0r.w)) / 2;
+
+  var paths = '';
+
+  // Local A₀ → MMA-0 (blue, straight down then curve in)
+  paths += '<path d="M' + a0cx + ',' + a0by + ' Q' + a0cx + ',' + mmaY + ' ' + (mmaX - 12) + ',' + mmaY + '" fill="none" stroke="#3b82f6" stroke-width="2" marker-end="url(#ah-blue)"/>';
+  // Local B₀ → MMA-0 (green, straight down then curve in)
+  paths += '<path d="M' + b0cx + ',' + b0by + ' Q' + b0cx + ',' + mmaY + ' ' + (mmaX + 12) + ',' + mmaY + '" fill="none" stroke="#059669" stroke-width="2" marker-end="url(#ah-green)"/>';
+
+  // Cross-CTA A₁ → MMA-0 top (dashed purple, route through gap)
+  var a1RouteY = a1by + 8;
+  paths += '<path d="M' + a1cx + ',' + a1by + ' L' + a1cx + ',' + a1RouteY + ' Q' + a1cx + ',' + (a1RouteY + 14) + ' ' + gapCx + ',' + (a1RouteY + 14) + ' Q' + (mmaX - 4) + ',' + (a1RouteY + 14) + ' ' + (mmaX - 4) + ',' + mmaY + '" fill="none" stroke="#7c3aed" stroke-width="2.5" stroke-dasharray="6,4" marker-end="url(#ah-purple)"/>';
+
+  // Cross-CTA B₁ → MMA-0 top (dashed purple, route through gap)
+  var b1RouteY = b1by + 8;
+  paths += '<path d="M' + b1cx + ',' + b1by + ' L' + b1cx + ',' + b1RouteY + ' Q' + b1cx + ',' + (b1RouteY + 28) + ' ' + gapCx + ',' + (b1RouteY + 28) + ' Q' + (mmaX + 4) + ',' + (b1RouteY + 28) + ' ' + (mmaX + 4) + ',' + mmaY + '" fill="none" stroke="#7c3aed" stroke-width="2.5" stroke-dasharray="6,4" marker-end="url(#ah-purple)"/>';
+
+  // Label in the gap between the two SM boxes
+  var labelX = gapCx;
+  var labelY = a1RouteY + 6;
+  paths += '<text x="' + labelX + '" y="' + labelY + '" text-anchor="middle" fill="#7c3aed" font-size="11" font-weight="600" font-family="SF Mono,Fira Code,monospace">distributed SMEM</text>';
+
+  // remove old dynamic paths
+  var old = svg.querySelectorAll('.dyn');
+  for (var i = 0; i < old.length; i++) old[i].remove();
+
+  var g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  g.setAttribute('class', 'dyn');
+  g.innerHTML = paths;
+  svg.appendChild(g);
+}
+
+window.addEventListener('load', drawArrows);
+window.addEventListener('resize', drawArrows);
+</script>
+
+
+</body></html>

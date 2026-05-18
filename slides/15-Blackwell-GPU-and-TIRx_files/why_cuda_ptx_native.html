@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<!-- saved from url=(0076)https://mlsyscourse.org/slides/tirx-gemm/demo/why_cuda_ptx_native.html?embed -->
+<html lang="en" data-immersive-translate-page-theme="light"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Why Native-level Access</title>
+<link rel="stylesheet" href="./viz-base.css">
+<style>
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    padding: 1.15rem 1.3rem;
+    min-height: 100vh;
+    background: var(--bg);
+  }
+
+  .wrap {
+    max-width: 1120px;
+    margin: 0 auto;
+    display: grid;
+    grid-template-rows: auto;
+    gap: 0.78rem;
+  }
+
+  .section {
+    margin-top: 0;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 0.8rem 0.95rem;
+  }
+
+  .page-title {
+    margin: 0;
+    color: #0f172a;
+    font-size: 1.15rem;
+    line-height: 1.28;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+
+  .question-line {
+    margin: 0;
+    color: #0f172a;
+    font-size: 1.15rem;
+    line-height: 1.28;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+
+  .lead-line {
+    margin: 0 0 0.5rem 0;
+    color: #0f172a;
+    font-size: 0.98rem;
+    line-height: 1.35;
+    font-weight: 600;
+  }
+
+  .bullets {
+    margin: 0;
+    padding-left: 1.1rem;
+    color: #1e293b;
+    font-size: 0.93rem;
+    line-height: 1.38;
+  }
+
+  .bullets li + li {
+    margin-top: 0.35rem;
+  }
+
+  .takeaway {
+    margin: 0;
+    padding: 0.6rem 0.72rem;
+    border-left: 3px solid #2563eb;
+    border-radius: 8px;
+    background: #eff6ff;
+    color: #1e3a8a;
+    font-size: 0.9rem;
+    line-height: 1.4;
+  }
+
+  .footnote {
+    margin: 0;
+    color: #475569;
+    font-size: 0.78rem;
+    line-height: 1.35;
+  }
+
+  .footnote a {
+    color: #1d4ed8;
+    text-decoration: none;
+    border-bottom: 1px dotted #93c5fd;
+  }
+
+  .cite {
+    font-size: 0.74em;
+    vertical-align: super;
+    line-height: 0;
+  }
+
+  .tag-human,
+  .tag-agent {
+    display: inline-block;
+    padding: 0.06rem 0.34rem;
+    border-radius: 999px;
+    font-size: 0.9em;
+    font-weight: 700;
+    line-height: 1.1;
+    border: 1px solid transparent;
+  }
+
+  .tag-human {
+    color: #1d4ed8;
+    background: #dbeafe;
+    border-color: #bfdbfe;
+  }
+
+  .tag-agent {
+    color: #0f766e;
+    background: #ccfbf1;
+    border-color: #99f6e4;
+  }
+
+  @media (max-width: 900px) {
+    body {
+      padding: 0.95rem 1rem;
+    }
+  }
+</style>
+<style data-id="immersive-translate-input-injected-css"></style></head>
+<body>
+  <main class="wrap">
+    <p class="question-line">Q: Why didn’t pre-FlashAttention ML compilers generate FlashAttention-style attention kernels?</p>
+    <p class="page-title">AI workloads and hardware outpace DSL adaptation and maintenance.</p>
+
+    <section class="section">
+      <ul class="bullets">
+        <li><strong>TIRx is our ongoing effort on ML compiler DSL for agentic and frontier programming R&amp;D needs (e.g. megakernels).</strong></li>
+        <li>We already have many DSLs (<code>TileLang</code><sup class="cite"><a href="https://github.com/tile-ai/tilelang" target="_blank" rel="noopener noreferrer">[1]</a></sup>, <code>Triton</code><sup class="cite"><a href="https://github.com/triton-lang/triton" target="_blank" rel="noopener noreferrer">[2]</a></sup>, <code>ThunderKittens</code><sup class="cite"><a href="https://github.com/HazyResearch/ThunderKittens" target="_blank" rel="noopener noreferrer">[3]</a></sup>, <code>TVM</code><sup class="cite"><a href="https://tvm.apache.org/" target="_blank" rel="noopener noreferrer">[4]</a></sup>, ...), and history has seen many more come and go.</li>
+        <li>In practice, the strongest kernels are still often written in <code>CUDA</code>, or built with CUDA-native libraries like <code>CUTLASS</code>.</li>
+        <li>SOTA optimizations and GPU features evolve quickly from generation to generation.</li>
+        <li>We are now also seeing native-first DSLs rising due to these same reasons (<code>Gluon</code><sup class="cite"><a href="https://github.com/triton-lang/triton/blob/main/python/tutorials/gluon/01-intro.py" target="_blank" rel="noopener noreferrer">[5]</a></sup>, <code>CuteDSL</code><sup class="cite"><a href="https://docs.nvidia.com/cutlass/latest/media/docs/pythonDSL/quick_start.html" target="_blank" rel="noopener noreferrer">[6]</a></sup>).</li>
+      </ul>
+    </section>
+
+    <section class="section">
+      <p class="lead-line">One recurring bottleneck:</p>
+      <ol class="bullets">
+        <li>User (<span class="tag-human">Human</span>/<span class="tag-agent">Agent</span>) cannot express the best kernel optimizations in DSL.</li>
+        <li>The compiler passes of DSL fail to utilize the latest optimizations/hardware features automatically when DSLs cannot express them.</li>
+        <li>Users (<span class="tag-human">Human</span>/<span class="tag-agent">Agent</span>) have to open the box and dig into compiler passes to inject optimizations, which can potentially introduce new failures.</li>
+      </ol>
+    </section>
+
+    <p class="takeaway"><strong>Design takeaway:</strong> native-level access should always be part of the programming model for agents and human to get the state of art performance.</p>
+
+    <p class="footnote">
+      DSL references:
+      [1] TileLang (tile-ai/tilelang),
+      [2] Triton (triton-lang/triton),
+      [3] ThunderKittens (HazyResearch/ThunderKittens),
+      [4] Apache TVM,
+      [5] Triton Gluon tutorial (<a href="https://github.com/triton-lang/triton/blob/main/python/tutorials/gluon/01-intro.py" target="_blank" rel="noopener noreferrer">01-intro.py</a>),
+      [6] NVIDIA CUTLASS CuTe DSL docs.
+      <br>
+      Sources (paraphrased): Horace He talk (from 34:00), Jane Street transcript; Matt Pharr, <em>The story of ispc: origins (part 1)</em> (quoting T. Foley).
+      <a href="https://www.youtube.com/watch?v=139UPjoq7Kw&amp;t=2040s" target="_blank" rel="noopener noreferrer">Video (from 34:00)</a> |
+      <a href="https://www.janestreet.com/tech-talks/building-machine-learning-systems-for-a-trillion-trillion-floating-point-operations/" target="_blank" rel="noopener noreferrer">Talk transcript</a> |
+      <a href="https://pharr.org/matt/blog/2018/04/18/ispc-origins" target="_blank" rel="noopener noreferrer">Blog post</a>
+    </p>
+  </main>
+
+
+</body></html>
