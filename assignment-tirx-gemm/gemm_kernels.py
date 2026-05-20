@@ -177,8 +177,39 @@ def hgemm_v2(M, N, K):
             #   1. Sync-load A[:, k*BLK_K : (k+1)*BLK_K] and B[:, ...] to SMEM
             #   2. Issue MMA with accum=(k != 0)
             #   3. Wait on mma_bar, flip phase
+            for k in range(K_TILES):
+                with Tx.cta():
+                    Tx.copy(Asmem[:,:], A[:, k*BLK_K:(k+1)*BLK_K])
+                    Tx.copy(Bsmem[:,:], B[:, k*BLK_K:(k+1)*BLK_K])
+                Tx.cuda.cta_sync()
+                Tx.ptx.tcgen05.fence.after_thread_sync()
 
+                if warp_id == 0:
+                    with Tx.thread(parent="warp")[Tx.ptx.elect_sync()]:
+                        Tx.gemm_async(tmem[:,:128], Asmem[:,:], Bsmem[:,:], accum=k!=0,
+                                    dispatch="tcgen05", cta_group=1)
+                        Tx.ptx.tcgen05.commit(mma_bar.ptr_to([0]), cta_group=1)
+                
+                Tx.ptx.mbarrier.try_wait(mma_bar.ptr_to([0]), phase_mma)
+                phase_mma = phase_mma ^ 1
             # TODO: Writeback TMEM → RF → GMEM (same as step 1)
+
+            Dreg = Tx.alloc_local((BLK_N,), acc_type)
+            Dreg_wg = Dreg.view(
+                128, BLK_N, 
+                layout=TileLayout(S[(128, BLK_N) : (1@axis_tid_in_wg, 1)])
+            )
+
+            Dreg_f16 = Tx.alloc_local((BLK_N,), d_type)
+            with Tx.warpgroup():
+                Tx.copy(Dreg_wg[:,:], tmem[:,:BLK_N])       # TMEM → registers
+                # Tx.cuda.cta_sync()  Is it necessary???? 
+
+            with Tx.thread():
+                Tx.cast(Dreg_f16[:], Dreg[:]) 
+                g_row = warp_id * 32 + lane_id
+                Tx.copy(D[g_row, : BLK_N], Dreg_f16[:])
+
 
             if warp_id == 0:
                 Tx.ptx.tcgen05.relinquish_alloc_permit(cta_group=1)
