@@ -74,15 +74,42 @@ def hgemm_v1(M, N, K):
 
             # TODO: Synchronous load: copy A and B tiles from GMEM to SMEM
             # Hint: use `with Tx.cta():` and `Tx.copy(dst, src)`
+            with Tx.cta():
+                Tx.copy(Asmem[:,:], A[m_st:m_st+128, :])
+                Tx.copy(Bsmem[:,:], B[n_st:n_st+128, :])
+            Tx.cuda.cta_sync()
+            Tx.ptx.tcgen05.fence.after_thread_sync()
 
             # TODO: Issue MMA (warp 0 only, elected thread)
             # Hint: Tx.gemm_async(tmem[...], Asmem[...], Bsmem[...],
             #          accum=False, dispatch="tcgen05", cta_group=1)
             # Then commit and wait on mma_bar
+            if warp_id == 0:
+                with Tx.thread(parent="warp")[Tx.ptx.elect_sync()]:
+                    Tx.gemm_async(tmem[:,:128], Asmem[:,:], Bsmem[:,:], accum=False,
+                                  dispatch="tcgen05", cta_group=1)
+                    Tx.ptx.tcgen05.commit(mma_bar.ptr_to([0]), cta_group=1)
+            
+            Tx.ptx.mbarrier.try_wait(mma_bar.ptr_to([0]), phase_mma)
 
             # TODO: Writeback: TMEM → RF → GMEM
             # Hint: Tx.copy from tmem to Dreg_wg (with warpgroup view),
             #       Tx.cast to fp16, then Tx.copy to D
+            Dreg = Tx.alloc_local((BLK_N,), acc_type)
+            Dreg_wg = Dreg.view(
+                128, BLK_N, 
+                layout=TileLayout(S[(128, BLK_N) : (1@axis_tid_in_wg, 1)])
+            )
+
+            Dreg_f16 = Tx.alloc_local((BLK_N,), d_type)
+            with Tx.warpgroup():
+                Tx.copy(Dreg_wg[:,:], tmem[:,:BLK_N])       # TMEM → registers
+                # Tx.cuda.cta_sync()  Is it necessary???? 
+
+            with Tx.thread():
+                Tx.cast(Dreg_f16[:], Dreg[:]) 
+                g_row = m_st + warp_id * 32 + lane_id
+                Tx.copy(D[g_row, n_st : n_st + BLK_N], Dreg_f16[:])
 
             # --- TMEM cleanup ---
             if warp_id == 0:
