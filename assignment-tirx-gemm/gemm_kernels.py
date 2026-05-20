@@ -383,15 +383,37 @@ def hgemm_v4(M, N, K):
             # TODO: Define @Tx.inline tma_load(k_st) that uses:
             #   Tx.copy_async(Asmem, A[...], dispatch="tma", cta_group=1, mbar=...)
             #   Tx.ptx.mbarrier.arrive.expect_tx(tma_bar, byte_count)
-
+            @Tx.inline 
+            def tma_load(k_st) :
+                Tx.copy_async(Asmem[:, :], A[m_st:m_st+BLK_M, k_st:k_st+BLK_K], dispatch="tma", cta_group=1, mbar=phase_tma)
+                Tx.copy_async(Bsmem[:, :], B[n_st:n_st+BLK_N, k_st:k_st+BLK_K], dispatch="tma", cta_group=1, mbar=phase_tma)
+                Tx.ptx.mbarrier.arrive.expect_tx(tma_bar, (BLK_M * BLK_K + BLK_N * BLK_K) * 2)
+            
             # TODO: Define @Tx.inline mma(accum) that:
             #   1. Waits on tma_bar (data ready)
             #   2. Issues gemm_async + commit
             #   3. Waits on mma_bar (MMA done)
+            @Tx.inline
+            def mma(accum):
+                Tx.ptx.mbarrier.try_wait(tma_bar.ptr_to([0]), phase_tma)
+                phase_tma ^= 1
+                # MARK is cta sync necessary here ? 
+                Tx.ptx.tcgen05.fence.after_thread_sync()
 
+                Tx.gemm_async(tmem[:,:128], Asmem[:,:], Bsmem[:,:], accum=accum,
+                                    dispatch="tcgen05", cta_group=1)
+                Tx.ptx.tcgen05.commit(mma_bar.ptr_to([0]), cta_group=1)
+                
+                Tx.ptx.mbarrier.try_wait(mma_bar.ptr_to([0]), phase_mma)
+                phase_mma = phase_mma ^ 1
+                # MARK is cta sync necessary here ? 
+            
             # TODO: Main loop (elected thread of warp 0):
             #   for k in range(K_TILES): tma_load(k*BLK_K); mma(k != 0)
 
+            for k in range(K_TILES):
+                tma_load(k*BLK_K)
+                mma(k!=0)
             # TODO: Writeback TMEM → RF → SMEM → TMA store → GMEM
             # You will need a Dsmem buffer with tma_shared_layout for TMA store.
 
