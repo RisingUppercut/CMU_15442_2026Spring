@@ -248,7 +248,73 @@ def hgemm_v3(M, N, K):
             # Hint: bx, by = Tx.cta_id([M // BLK_M, N // BLK_N], parent="kernel")
             # Use bx*BLK_M and by*BLK_N as tile offsets.
             # The rest is like step 2 but with dynamic m_st, n_st.
-            pass
+            bx, by = Tx.cta_id([M // BLK_M, N // BLK_N], parent="kernel")
+            wg_id = Tx.warpgroup_id([1], parent="cta")
+            warp_id = Tx.warp_id([4], parent="warpgroup")
+            lane_id = Tx.thread_id([32], parent="warp")
+            
+            m_st = Tx.meta_var(bx * BLK_M)
+            n_st = Tx.meta_var(by * BLK_N)
+
+            pool = Tx.PoolAllocator()
+            tmem_addr = pool.alloc((1,), "uint32")
+            mma_bar = pool.alloc((1,), "uint64", align=8)
+            pool.move_base_to(1024)
+            Asmem = pool.alloc((BLK_M, BLK_K), a_type, layout=A_layout)
+            Bsmem = pool.alloc((BLK_N, BLK_K), b_type, layout=B_layout)
+            pool.commit()
+
+            if warp_id == 0:
+                if lane_id == 0:
+                    Tx.ptx.mbarrier.init(mma_bar.ptr_to([0]), 1)
+                Tx.ptx.tcgen05.alloc(Tx.address_of(tmem_addr), n_cols=512, cta_group=1)
+
+            Tx.ptx.fence.proxy_async("shared::cta")
+            Tx.ptx.fence.mbarrier_init()
+            Tx.cuda.cta_sync()
+
+            tmem = Tx.decl_buffer((128, 512), "float32", scope="tmem", allocated_addr=0,
+                                  layout=TileLayout(S[(128, 512) : (1@TLane, 1@TCol)]))
+
+            phase_mma: Tx.int32
+            phase_mma = 0
+            
+            for k in range(K_TILES):
+                with Tx.cta():
+                    Tx.copy(Asmem[:,:], A[m_st:m_st+BLK_M, k*BLK_K:(k+1)*BLK_K])
+                    Tx.copy(Bsmem[:,:], B[n_st:n_st+BLK_N, k*BLK_K:(k+1)*BLK_K])
+                Tx.cuda.cta_sync()
+                Tx.ptx.tcgen05.fence.after_thread_sync()
+
+                if warp_id == 0:
+                    with Tx.thread(parent="warp")[Tx.ptx.elect_sync()]:
+                        Tx.gemm_async(tmem[:,:128], Asmem[:,:], Bsmem[:,:], accum=k!=0,
+                                    dispatch="tcgen05", cta_group=1)
+                        Tx.ptx.tcgen05.commit(mma_bar.ptr_to([0]), cta_group=1)
+                
+                Tx.ptx.mbarrier.try_wait(mma_bar.ptr_to([0]), phase_mma)
+                phase_mma = phase_mma ^ 1
+
+            Dreg = Tx.alloc_local((BLK_N,), acc_type)
+            Dreg_wg = Dreg.view(
+                128, BLK_N, 
+                layout=TileLayout(S[(128, BLK_N) : (1@axis_tid_in_wg, 1)])
+            )
+
+            Dreg_f16 = Tx.alloc_local((BLK_N,), d_type)
+            with Tx.warpgroup():
+                Tx.copy(Dreg_wg[:,:], tmem[:,:BLK_N])       # TMEM → registers
+                # Tx.cuda.cta_sync()  Is it necessary???? 
+
+            with Tx.thread():
+                Tx.cast(Dreg_f16[:], Dreg[:]) 
+                g_row = m_st + warp_id * 32 + lane_id
+                Tx.copy(D[g_row, n_st:n_st+BLK_N], Dreg_f16[:])
+
+
+            if warp_id == 0:
+                Tx.ptx.tcgen05.relinquish_alloc_permit(cta_group=1)
+                Tx.ptx.tcgen05.dealloc(tmem_addr[0], n_cols=512, cta_group=1)
 
     return kernel
 
