@@ -614,9 +614,10 @@ def hgemm_v6(M, N, K):
     K_TILES = K // BLK_K
     PIPE_DEPTH = 2
     PRE_NUM = min(PIPE_DEPTH, K_TILES)
-
+    EPI_N = 64
     A_layout = tma_shared_layout(a_type, SwizzleMode.SWIZZLE_128B_ATOM, (PIPE_DEPTH, BLK_M, BLK_K))
     B_layout = tma_shared_layout(b_type, SwizzleMode.SWIZZLE_128B_ATOM, (PIPE_DEPTH, BLK_N, BLK_K))
+    D_layout = tma_shared_layout(d_type, SwizzleMode.SWIZZLE_128B_ATOM, (BLK_M, EPI_N))
 
     @Tx.prim_func(tirx=True)
     def kernel(
@@ -634,8 +635,117 @@ def hgemm_v6(M, N, K):
             #   - tile_scheduler = ClusterPersistentScheduler2D(...)
             #   - while tile_scheduler.valid(): ... tile_scheduler.next_tile()
             #   - m_st/n_st from tile_scheduler.m_idx/n_idx
-            pass
+            bx = Tx.cta_id([SM_COUNT], parent="kernel")
+            wg_id = Tx.warpgroup_id([1], parent="cta")
+            warp_id = Tx.warp_id([4], parent="warpgroup")
+            lane_id = Tx.thread_id([32], parent="warp")
 
+            pool = Tx.PoolAllocator()
+            tmem_addr = pool.alloc((1,), "uint32")
+            tma_bar = pool.alloc((PIPE_DEPTH,), "uint64", align=8)
+            mma_bar = pool.alloc((1,), "uint64", align=8)
+            pool.move_base_to(1024)
+            Asmem = pool.alloc((PIPE_DEPTH, BLK_M, BLK_K), a_type, layout=A_layout)
+            Bsmem = pool.alloc((PIPE_DEPTH, BLK_N, BLK_K), b_type, layout=B_layout)
+            Dsmem = pool.alloc((BLK_M, EPI_N), d_type, layout=D_layout)
+            pool.commit()
+
+            if warp_id == 0:
+                if lane_id == 0:
+                    for i in range(PIPE_DEPTH):
+                        Tx.ptx.mbarrier.init(tma_bar.ptr_to([i]), 1)
+                    Tx.ptx.mbarrier.init(mma_bar.ptr_to([0]), 1)
+                Tx.ptx.tcgen05.alloc(Tx.address_of(tmem_addr), n_cols=512, cta_group=1)
+
+            Tx.ptx.fence.proxy_async("shared::cta")
+            Tx.ptx.fence.mbarrier_init()
+            Tx.cuda.cta_sync()
+
+            tmem = Tx.decl_buffer((128, 512), "float32", scope="tmem", allocated_addr=0,
+                                  layout=TileLayout(S[(128, 512) : (1@TLane, 1@TCol)]))
+
+
+            phase_tma = Tx.alloc_local((2,), dtype="int32", scope="local")
+            phase_mma: Tx.int32
+            phase_tma[0] = 0
+            phase_tma[1] = 0
+            phase_mma = 0
+
+            @Tx.inline 
+            def tma_load(m_st, n_st, k_st, stage) :
+                Tx.copy_async(Asmem[stage, :, :], A[m_st:m_st+BLK_M, k_st:k_st+BLK_K], dispatch="tma", cta_group=1, mbar=tma_bar.ptr_to([stage]))
+                Tx.copy_async(Bsmem[stage, :, :], B[n_st:n_st+BLK_N, k_st:k_st+BLK_K], dispatch="tma", cta_group=1, mbar=tma_bar.ptr_to([stage]))
+                Tx.ptx.mbarrier.arrive.expect_tx(tma_bar.ptr_to([stage]), (BLK_M * BLK_K + BLK_N * BLK_K) * 2)
+                
+            @Tx.inline
+            def mma(accum, stage):
+                Tx.ptx.mbarrier.try_wait(tma_bar.ptr_to([stage]), phase_tma[stage])
+                phase_tma[stage] ^= 1
+            
+                Tx.ptx.tcgen05.fence.after_thread_sync()
+                
+                Tx.gemm_async(tmem[:,:128], Asmem[stage,:,:], Bsmem[stage,:,:], accum=accum,
+                                    dispatch="tcgen05", cta_group=1)
+                Tx.ptx.tcgen05.commit(mma_bar.ptr_to([0]), cta_group=1)
+                Tx.ptx.mbarrier.try_wait(mma_bar.ptr_to([0]), phase_mma)
+                phase_mma = phase_mma ^ 1
+                Tx.ptx.tcgen05.fence.after_thread_sync()  # necessary ? 
+
+            tile_scheduler = ClusterPersistentScheduler2D(
+                "ts", num_m_tiles=M//128, num_n_tiles=N//128,
+                l2_group_size=8, num_clusters=SM_COUNT)
+            tile_scheduler.init(bx)
+
+            while tile_scheduler.valid():
+                m_st = Tx.meta_var(tile_scheduler.m_idx * BLK_M)
+                n_st = Tx.meta_var(tile_scheduler.n_idx * BLK_N)
+                # ... compute tile at (tile_scheduler.m_idx, tile_scheduler.n_idx) ...
+
+                if warp_id == 0:
+                    tid = Tx.meta_var(warp_id * 32 + lane_id)
+                    with Tx.thread(parent="warpgroup")[tid == 0]: 
+                        for k in range(PRE_NUM):
+                            tma_load(m_st, n_st, k*BLK_K, k%PIPE_DEPTH)
+    
+                        for k in range(K_TILES):
+                            stage = k%PIPE_DEPTH
+                            mma(k!=0, stage)
+                            next = (k+PIPE_DEPTH)
+                            if next < K_TILES:
+                                tma_load(m_st, n_st, next*BLK_K, next%PIPE_DEPTH)
+
+                Tx.cuda.cta_sync()
+                Tx.ptx.tcgen05.fence.after_thread_sync()
+
+                Dreg = Tx.alloc_local((BLK_N,), acc_type) # TMEM -> RF
+                Dreg_wg = Dreg.view(
+                    128, BLK_N, 
+                    layout=TileLayout(S[(128, BLK_N) : (1@axis_tid_in_wg, 1)])
+                )
+
+                Dreg_f16 = Tx.alloc_local((BLK_N,), d_type)
+                with Tx.warpgroup():
+                    Tx.copy(Dreg_wg[:,:], tmem[:,:BLK_N])       # TMEM → registers
+                with Tx.thread():
+                    Tx.cast(Dreg_f16[:], Dreg[:]) 
+
+                for no in Tx.unroll(BLK_N // EPI_N):  # Could I change dmem to 128 * 128 ？ 
+                    with Tx.thread():
+                        tid = warp_id * 32 + lane_id
+                        Tx.copy(Dsmem[tid,:], Dreg_f16[no*EPI_N:(no+1)*EPI_N])        # registers → SMEM
+                        Tx.ptx.fence.proxy_async("shared::cta")
+                    Tx.cuda.warpgroup_sync(10)  # barrir id ?
+                    with Tx.thread(parent="warpgroup")[Tx.ptx.elect_sync()]:
+                        Tx.copy_async(D[m_st:m_st+BLK_M, n_st+no*EPI_N:n_st+(no+1)*EPI_N], Dsmem[:,:], dispatch="tma") # SMEM → GMEM (TMA)
+                        Tx.ptx.cp_async.bulk.commit_group()
+                    Tx.ptx.cp_async.bulk.wait_group(0)
+
+                
+                tile_scheduler.next_tile()
+
+            if warp_id == 0:
+                Tx.ptx.tcgen05.relinquish_alloc_permit(cta_group=1)
+                Tx.ptx.tcgen05.dealloc(tmem_addr[0], n_cols=512, cta_group=1)
     return kernel
 
 
